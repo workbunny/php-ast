@@ -1,0 +1,21 @@
+# build artifacts
+*.so
+*.dll
+*.exe
+*-cache
+*-out
+
+# composer
+vendor/
+composer.lock
+
+# reference
+reference/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
