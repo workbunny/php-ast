@@ -10,6 +10,7 @@ const SubRange = ast.SubRange;
 const ListRange = ast.ListRange;
 const ExtraIndex = ast.ExtraIndex;
 const TokenIndex = ast.TokenIndex;
+const PhpVersion = @import("version.zig").PhpVersion;
 
 const stmt = @import("parser_stmt.zig");
 const expr = @import("parser_expr.zig");
@@ -151,6 +152,12 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         .kw_private => { promoted = 3; _ = p.nextToken(); },
         else => {},
     }
+    // `public final int $x` 形式的构造器属性提升为 8.5 引入
+    var is_final_promoted = false;
+    if (p.tokTag() == .kw_final) {
+        is_final_promoted = true;
+        _ = p.nextToken();
+    }
     var type_opt: OptionalIndex = .none;
     if (types.isTypeStart(p)) {
         const ty = (try types.parseType(p)) orelse return null;
@@ -177,11 +184,15 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         def = OptionalIndex.fromIndex(d);
     }
     const extra = try p.addExtra(ParamComponents{ .name = var_tok, .flags = flags, .promoted = promoted, .variadic = variadic, .type = type_opt, .default = def, .attrs = attrs });
-    return (try p.addNode(.{
+    const node = (try p.addNode(.{
         .tag = .param,
         .main_token = var_tok,
         .data = .{ .extra_and_opt_node = .{ extra, def } },
     })) orelse unreachable;
+    if (promoted != 0 and is_final_promoted) {
+        p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, 5);
+    }
+    return node;
 }
 
 pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
@@ -380,7 +391,9 @@ fn parsePropertyModifiers(p: *Parser) PropertyMods {
                         _ = p.nextToken();
                         if (p.isSoftKw("set")) _ = p.nextToken() else p.warn(ast.Error.Tag.expected_token);
                         _ = p.eatToken(.rparen);
-                        res.visibility |= @as(u32, v) << 8;
+                        // 非对称可见性：高字节写入 set 侧可见性（覆盖默认 3），
+                        // 使「无 set/有 set」可区分（读取时 set_vis != 3 即表示非对称）。
+                        res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
                     }
                 }
                 vis_count += 1;
@@ -436,11 +449,18 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
         .hooks = hooks,
         .attrs = attrs,
     });
-    return (try p.addNode(.{
+    const node = (try p.addNode(.{
         .tag = .stmt_property,
         .main_token = name_tok,
         .data = .{ .extra_and_opt_node = .{ extra, def } },
     })) orelse unreachable;
+    // 非对称可见性：非静态为 8.4，静态为 8.5（set_vis == 3 表示未指定非对称）
+    const set_vis = (mods.visibility >> 8) & 0xFF;
+    if (set_vis != 3) {
+        const ver: u16 = if ((mods.flags & 4) != 0) 5 else 4;
+        p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, ver);
+    }
+    return node;
 }
 
 /// 解析属性访问钩子 `get`/`set`，分表达式（`=> expr;`）与语句块两种形态。
@@ -513,11 +533,16 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
         .value = OptionalIndex.fromIndex(value),
         .attrs = attrs,
     });
-    return (try p.addNode(.{
+    const node = (try p.addNode(.{
         .tag = .stmt_class_const,
         .main_token = kw,
         .data = .{ .extra_and_opt_node = .{ extra, OptionalIndex.fromIndex(value) } },
     })) orelse unreachable;
+    // 常量上的注解（含 #[\Deprecated]）为 8.5 引入
+    if (attrs.start != attrs.end) {
+        p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, 5);
+    }
+    return node;
 }
 
 /// 解析 interface / trait / enum 声明；enum 体内部特判为枚举项，其余走类成员。

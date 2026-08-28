@@ -12,7 +12,7 @@
 
 ## 简介
 
-php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 8.4 及更新版本的源码解析为内存中的抽象语法树（AST）。
+php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为内存中的抽象语法树（AST），并逐节点标注其「引入版本」。
 库不依赖 PHP 运行时，纯 Zig 实现，输出为结构数组（SoA）形式的 AST，供 Zig 生态中需要处理 PHP 代码的工具使用。
 
 ### 设计理念
@@ -20,7 +20,7 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 8.4 及更新�
 - 显式内存来源：分配器由调用方传入，AST 不含隐藏的运行时分配；`deinit` 一次性释放全部内存。
 - 结构数组而非指针树：节点存于连续数组，节点间以索引互相引用，避免逐节点堆分配与指针跳转。
 - 多错误收集：词法与语法错误尽量继续解析并累计，调用方一次获得全部诊断。
-- 声明式语法版本：`PhpVersion` 控制接受的语法特性，不支持的特性在解析期即时上报。
+- 版本信息 + 门控：解析结果在 `Ast.nodeVersion(node)` 上提供逐节点的「引入版本」（基础语法记 `BASE_VERSION`/`id=0`）；同时，`parse` 的 `version` 参数作为目标版本，任何引入版本高于目标的节点会在 `ast.errors` 中记为 `unsupported_version` 错误，交由调用方决定放行或拒绝。
 
 ## 设计
 
@@ -76,9 +76,11 @@ pub fn main() !void {
     defer tree.deinit(gpa.allocator());
 
     // errors 为空表示解析无错误；否则逐个报告诊断
+    // e.format 会把版本门控错误渲染成可读文案（含「要求版本」与「目标版本」）
+    var errbuf: [128]u8 = undefined;
     for (tree.errors) |e| {
         std.debug.print("parse error: {s} @ '{s}'\n", .{
-            @tagName(e.tag),
+            e.format(&tree, &errbuf),
             tree.tokenSlice(e.token),
         });
     }
@@ -115,7 +117,7 @@ zig build test
 | `src/ast.zig`         | `Ast` SoA 结构、`Node`/`Tag` 枚举、全部 Components、`extra_data` 编解码、`parse` 入口                        |
 | `src/token.zig`       | `Token.Tag` 枚举与对应 lexeme 文本                                                                           |
 | `src/lexer.zig`       | 手写词法器，输出含注释 token 的 token 流（以 `eof` 哨兵结尾）                                                |
-| `src/version.zig`     | `PhpVersion` 声明式版本谓词（`supportsPropertyHooks` 等）                                                    |
+| `src/version.zig`     | `PhpVersion` 版本载体与比较工具（`fromComponents`/`newerOrEqual`），不做语法门控                             |
 | `src/parser.zig`      | `Parser` core：`addNode`/`addExtra`/`addNodeList`/`expectToken`/`eatToken`/`tokTag` 等共享机件 + `parseRoot` |
 | `src/parser_stmt.zig` | 语句级 `parse*` 与 Components（if/while/foreach/return/echo/block…）                                         |
 | `src/parser_decl.zig` | 声明级 `parse*`（类/接口/trait/enum、函数、成员、属性钩子…）                                                 |
@@ -285,6 +287,17 @@ zig build test
 | 非对称可见性 `public private(set)`     | 8.4      | ✓   |              |
 | 无括号 `new`                           | 8.4      | ✓   |              |
 | `#[Deprecated]`                        | 8.0      | ✓   | 即 Attribute |
+
+#### 8.5 语法
+
+| 能力                                              | PHP 版本 | 状态 | 备注                                                                     |
+|---------------------------------------------------|----------|------|--------------------------------------------------------------------------|
+| 管道运算符 `\|>`（`Expr\Pipe`）                   | 8.5      | ✓   | 独立 `expr_pipe` 节点；词法把 `\|` 与 `>` 拆成两个 token，解析时前瞻合并 |
+| `(void)` 强转                                     | 8.5      | ✓   | 复用 `expr_cast` 节点，仅当强转类型为 `void` 时标注 8.5                  |
+| `clone($obj, withProperties: [...])`              | 8.5      | ✓   | `expr_clone` 节点新增可选的 `withProperties` 子节点                      |
+| 常量上的注解（类常量 / 全局常量）                 | 8.5      | ✓   | `stmt_class_const` / `const_decl` 带属性组时标注 8.5                     |
+| 构造器属性提升 + `final`（`public final int $x`） | 8.5      | ✓   | `param` 节点在「提升且含 final 修饰」时标注 8.5                          |
+| 静态属性非对称可见性（`public protected(set) static`） | 8.5      | ✓   | 非对称可见性（8.4）现已解析识别（set 侧可见性 != 3）；静态叠加即 8.5    |
 
 #### 遍历与注释
 

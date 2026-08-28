@@ -10,6 +10,7 @@ const SubRange = ast.SubRange;
 const ListRange = ast.ListRange;
 const ExtraIndex = ast.ExtraIndex;
 const TokenIndex = ast.TokenIndex;
+const PhpVersion = @import("version.zig").PhpVersion;
 
 const decl = @import("parser_decl.zig");
 const expr = @import("parser_expr.zig");
@@ -100,7 +101,7 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
         .kw_switch => return parseSwitch(p),
         .kw_throw => return parseThrowStmt(p),
         .kw_try => return parseTry(p),
-        .kw_const => return parseConst(p),
+        .kw_const => return parseConst(p, p.emptySubRange()),
         .kw_use => return parseUse(p),
         .kw_declare => return parseDeclare(p),
         .kw_goto => return parseGoto(p),
@@ -115,6 +116,7 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
                 .kw_enum => decl.parseTypeDecl(p, .stmt_enum, attrs),
                 .kw_interface => decl.parseTypeDecl(p, .stmt_interface, attrs),
                 .kw_trait => decl.parseTypeDecl(p, .stmt_trait, attrs),
+                .kw_const => parseConst(p, attrs),
                 else => {
                     p.warn(ast.Error.Tag.expected_token);
                     return null;
@@ -543,8 +545,9 @@ pub fn parseTry(p: *Parser) ast.ParseError!?Index {
     })) orelse unreachable;
 }
 
-/// 全局常量声明：`const FOO = 1, BAR = 2;`
-pub fn parseConst(p: *Parser) ast.ParseError!?Index {
+/// 全局常量声明：`#[A] const FOO = 1, BAR = 2;`
+/// 常量上的注解（含 #[\Deprecated]）为 8.5 引入，故带属性的声明会被标注为 8.5。
+pub fn parseConst(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     const kw = p.nextToken();
     var decls = try std.ArrayList(Index).initCapacity(p.gpa, 0);
     defer decls.deinit(p.gpa);
@@ -557,6 +560,10 @@ pub fn parseConst(p: *Parser) ast.ParseError!?Index {
             .main_token = name,
             .data = .{ .node_and_token = .{ value, name } },
         })) orelse unreachable;
+        // 全局常量上的注解为 8.5 引入
+        if (attrs.start != attrs.end) {
+            p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, 5);
+        }
         try decls.append(p.gpa, node);
         if (p.tokTag() == .comma) {
             _ = p.nextToken();

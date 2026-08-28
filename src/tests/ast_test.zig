@@ -160,6 +160,17 @@ test "非对称可见性" {
     defer tree.deinit(gpa);
     try std.testing.expect(tree.errors.len == 0);
     try std.testing.expect(countTag(tree, .stmt_property) == 2);
+
+    // 非对称可见性为 8.4：目标 8.3 应报 unsupported_version，目标 8.4 不应
+    var low = try ast.Ast.parse(gpa,
+        \\<?php class Foo { public protected(set) int $baz; }
+    , .{ .id = 80300 });
+    defer low.deinit(gpa);
+    var g: usize = 0;
+    for (low.errors) |e| {
+        if (e.tag == .unsupported_version) g += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), g);
 }
 
 test "Deprecated 属性" {
@@ -381,7 +392,7 @@ test "属性 - 参数 / 枚举 case / 类常量 / 钩子 / 属性组" {
         \\#[Foo] function f(int $x) {}
         \\enum E { #[Bar] case A; }
         \\class C { #[Baz] const FOO = 1; }
-    , .{ .id = 80400 });
+    , .{ .id = 80500 });
     defer tree.deinit(gpa);
     try std.testing.expect(tree.errors.len == 0);
     try std.testing.expect(countTag(tree, .attr_group) >= 3);
@@ -392,7 +403,7 @@ test "属性 - 参数 / 枚举 case / 类常量 / 钩子 / 属性组" {
     var tree2 = try ast.Ast.parse(gpa,
         \\<?php
         \\class C { public string $x { #[Hook] get => $this->x; } }
-    , .{ .id = 80400 });
+    , .{ .id = 80500 });
     defer tree2.deinit(gpa);
     try std.testing.expect(tree2.errors.len == 0);
     try std.testing.expect(countTag(tree2, .attr_group) >= 1);
@@ -438,6 +449,95 @@ test "arena 分配器下 parse + walkStack 同样工作" {
     try std.testing.expect(visited == tree.nodes.len);
     // arena 下 deinit 不崩溃（arena.free 为 no-op），真实释放在 arena.deinit()
     tree.deinit(gpa);
+}
+
+test "版本门控：目标版本过低时报 unsupported_version" {
+    const gpa = std.testing.allocator;
+
+    // 目标 8.0，但源码用到 8.1 的 enum/case -> 应产生版本错误
+    var tree = try ast.Ast.parse(gpa, "<?php enum E { case A; }", .{ .id = 80000 });
+    defer tree.deinit(gpa);
+    var gate_count: usize = 0;
+    var buf: [128]u8 = undefined;
+    for (tree.errors) |e| {
+        if (e.tag == .unsupported_version) {
+            gate_count += 1;
+            // 错误须携带该节点要求的版本，并渲染出可读文案
+            try std.testing.expect(e.required.id == 80100); // enum/case 为 8.1
+            const msg = e.format(&tree, &buf);
+            try std.testing.expect(std.mem.indexOf(u8, msg, "8.1") != null);
+            try std.testing.expect(std.mem.indexOf(u8, msg, "8.0") != null);
+        }
+    }
+    try std.testing.expect(gate_count == 2); // stmt_enum 与 stmt_case 均为 8.1
+
+    // 目标 8.4 时同一源码不应产生版本错误
+    var tree2 = try ast.Ast.parse(gpa, "<?php enum E { case A; }", .{ .id = 80400 });
+    defer tree2.deinit(gpa);
+    for (tree2.errors) |e| try std.testing.expect(e.tag != .unsupported_version);
+}
+
+test "PHP 8.5 语法节点标注 8.5 并受版本门控" {
+    const gpa = std.testing.allocator;
+
+    // 每个用例：源码 + 预期在「目标 8.4」下产生的 8.5 版本门控错误数
+    const Case = struct { src: [:0]const u8, n: usize };
+    const cases = [_]Case{
+        // 管道运算符
+        Case{ .src = "<?php $x |> strlen;", .n = 1 },
+        // (void) 强转
+        Case{ .src = "<?php (void) foo();", .n = 1 },
+        // clone 函数式 withProperties
+        Case{ .src = "<?php clone($o, withProperties: ['a' => 1]);", .n = 1 },
+        // 类常量上的注解
+        Case{ .src = "<?php class C { #[A] const X = 1; }", .n = 1 },
+        // 全局常量上的注解
+        Case{ .src = "<?php #[A] const X = 1;", .n = 1 },
+        // 静态属性非对称可见性
+        Case{ .src = "<?php class C { public protected(set) static int $x; }", .n = 1 },
+        // 构造器属性提升 + final
+        Case{ .src = "<?php class C { public function __construct(public final int $x) {} }", .n = 1 },
+    };
+
+    for (cases) |c| {
+        // 目标 8.4 低于 8.5 -> 应报 required=8.5 的 unsupported_version
+        var tree = try ast.Ast.parse(gpa, c.src, .{ .id = 80400 });
+        defer tree.deinit(gpa);
+        var gate: usize = 0;
+        for (tree.errors) |e| {
+            if (e.tag == .unsupported_version and e.required.id == 80500) gate += 1;
+        }
+        try std.testing.expectEqual(c.n, gate);
+
+        // 目标 8.5 不应再报版本错误
+        var tree2 = try ast.Ast.parse(gpa, c.src, .{ .id = 80500 });
+        defer tree2.deinit(gpa);
+        for (tree2.errors) |e| try std.testing.expect(e.tag != .unsupported_version);
+    }
+}
+
+test "nodeVersion 标记节点引入版本" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\enum E { case A; }
+        \\$x = new Foo;
+    , .{ .id = 80400 });
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len == 0);
+    try std.testing.expect(tree.node_versions.len == tree.nodes.len);
+
+    for (tree.nodes.items(.tag), 0..) |tag, i| {
+        const v = tree.node_versions[i];
+        if (tag == .stmt_enum or tag == .stmt_case) {
+            // enum / case 为 8.1 引入
+            try std.testing.expect(v.id == 80100);
+        }
+        if (tag == .expr_new) {
+            // 此处 `new Foo;` 为无括号形式，8.4 引入
+            try std.testing.expect(v.id == 80400);
+        }
+    }
 }
 
 test "walkStack 与 walk 产出一致且零每节点分配" {

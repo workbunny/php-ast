@@ -1,6 +1,7 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const PhpVersion = @import("version.zig").PhpVersion;
+const BASE_VERSION = @import("version.zig").BASE_VERSION;
 const Lexer = @import("lexer.zig").Lexer;
 const parser = @import("parser.zig");
 
@@ -73,6 +74,29 @@ pub const ListRange = struct {
 pub const Error = struct {
     tag: Error.Tag,
     token: TokenIndex,
+    /// 仅 `unsupported_version` 使用：该节点语法要求的 PHP 版本；
+    /// 其余错误恒为 `BASE_VERSION`(id=0)，读取无意义。
+    required: PhpVersion,
+
+    /// 把错误渲染成可读文案。对 `unsupported_version` 写明「该语法要求的版本」
+    /// 与「parse 时指定的目标版本」，下游据此即可定位用错了哪一版语法；
+    /// 其余错误仅给出其 `Tag` 名。`buf` 由调用方提供，返回其有效切片。
+    pub fn format(self: Error, tree: *const Ast, buf: []u8) []const u8 {
+        if (self.tag == .unsupported_version) {
+            const r = self.required;
+            const t = tree.version;
+            return std.fmt.bufPrint(buf,
+                "node syntax requires PHP {}.{} but target is {}.{}",
+                .{
+                    r.id / 10000,
+                    (r.id % 10000) / 100,
+                    t.id / 10000,
+                    (t.id % 10000) / 100,
+                },
+            ) catch "unsupported version";
+        }
+        return std.fmt.bufPrint(buf, "{s}", .{@tagName(self.tag)}) catch "parse error";
+    }
 
     /// 错误种类枚举。每个变体对应一种具体的语法期望失败。
     pub const Tag = enum {
@@ -87,6 +111,8 @@ pub const Error = struct {
         expected_lbracket,
         unexpected_eof,
         lex_error,
+        /// 语法构造的引入版本高于 `parse` 指定的目标版本（版本门控）。
+        unsupported_version,
     };
 };
 
@@ -180,6 +206,7 @@ pub const Node = struct {
         expr_closure,
         expr_arrow_function,
         expr_clone,
+        expr_pipe,
         expr_isset,
         expr_empty,
         expr_eval,
@@ -259,6 +286,26 @@ pub const Location = struct {
     line_end: usize,
 };
 
+/// 返回某节点种类的「引入版本」。基础语法（≤ PHP 8.0）返回 `BASE_VERSION`(id=0)，
+/// 表示不携带版本信息；8.1 及以后引入的节点类型记录对应版本。
+///
+/// 与「节点结构无关」的版本差异（如 `new` 的无括号形式，PHP 8.4）无法由 tag 区分，
+/// 由解析点在 `addNode` 之后按需覆盖（见 parser_expr.zig 的 `expr_new`）。
+pub fn tagVersion(tag: Node.Tag) PhpVersion {
+    return switch (tag) {
+        // 8.1 引入的新节点类型
+        .stmt_enum, .stmt_case => PhpVersion.fromComponents(8, 1),
+        .expr_first_class_callable => PhpVersion.fromComponents(8, 1),
+        .type_intersection => PhpVersion.fromComponents(8, 1),
+        // 属性钩子节点本身即 8.4 引入
+        .property_hook => PhpVersion.fromComponents(8, 4),
+        // 管道运算符为 8.5 引入（无括号 new 的 8.4 覆盖在解析点处理）
+        .expr_pipe => PhpVersion.fromComponents(8, 5),
+        // 其余节点默认基础语法；其 8.x 特例形式在解析点覆盖（如 expr_new 无括号=8.4）
+        else => BASE_VERSION,
+    };
+}
+
 /// 解析结果：一棵完整的 PHP AST，持有 `tokens`/`nodes`/`extra_data`/`errors`，
 /// 以及 `version` 与根节点 `root`。用毕调用 `deinit(gpa)` 释放。
 pub const Ast = struct {
@@ -267,6 +314,8 @@ pub const Ast = struct {
     nodes: NodeList.Slice,
     extra_data: []u32,
     errors: []const Error,
+    /// 与 `nodes` 等长：按节点顺序记录「引入版本」；`BASE_VERSION`(id=0) 表示基础语法。
+    node_versions: []PhpVersion,
     version: PhpVersion,
     root: Index,
 
@@ -298,6 +347,12 @@ pub const Ast = struct {
     /// 取某节点的 `data` 联合（直接子引用）。
     pub fn nodeData(tree: *const Ast, node: Index) Node.Data {
         return tree.nodes.items(.data)[@intFromEnum(node)];
+    }
+
+    /// 取某节点的「引入版本」。`id == 0`（`BASE_VERSION`）表示基础语法，未单独记录版本。
+    /// 用于下游自行做兼容性判断，本库不做门控。
+    pub fn nodeVersion(tree: *const Ast, node: Index) PhpVersion {
+        return tree.node_versions[@intFromEnum(node)];
     }
 
     /// 从 `extra_data[index]` 按字段顺序反序列化一段 `Components` 负载。
@@ -435,6 +490,7 @@ pub const Ast = struct {
         tree.nodes.deinit(gpa);
         gpa.free(tree.extra_data);
         gpa.free(tree.errors);
+        gpa.free(tree.node_versions);
         tree.* = undefined;
     }
 
@@ -479,18 +535,35 @@ fn parseTokens(
         .nodes = NodeList{},
         .extra_data = try std.ArrayList(u32).initCapacity(gpa, 0),
         .errors = try std.ArrayList(Error).initCapacity(gpa, 0),
+        .node_versions = try std.ArrayList(PhpVersion).initCapacity(gpa, 0),
         .tok_i = 0,
     };
     defer p.nodes.deinit(gpa);
     defer p.extra_data.deinit(gpa);
     defer p.errors.deinit(gpa);
+    defer p.node_versions.deinit(gpa);
 
     const root = try p.parseRoot();
+
+    // 版本门控：把引入版本高于目标版本的节点上报为专用错误，交给调用方决定放行或拒绝。
+    var i: usize = 0;
+    while (i < p.node_versions.items.len) : (i += 1) {
+        const nv = p.node_versions.items[i];
+        if (nv.id != 0 and nv.id > version.id) {
+            try p.errors.append(gpa, .{
+                .tag = .unsupported_version,
+                .token = p.nodes.items(.main_token)[i],
+                .required = nv,
+            });
+        }
+    }
 
     const extra_data = try p.extra_data.toOwnedSlice(gpa);
     errdefer gpa.free(extra_data);
     const errors = try p.errors.toOwnedSlice(gpa);
     errdefer gpa.free(errors);
+    const node_versions = try p.node_versions.toOwnedSlice(gpa);
+    errdefer gpa.free(node_versions);
 
     return Ast{
         .source = source,
@@ -498,6 +571,7 @@ fn parseTokens(
         .nodes = p.nodes.toOwnedSlice(),
         .extra_data = extra_data,
         .errors = errors,
+        .node_versions = node_versions,
         .version = version,
         .root = root,
     };

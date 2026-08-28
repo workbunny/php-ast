@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const Token = @import("token.zig").Token;
+const PhpVersion = @import("version.zig").PhpVersion;
 const Parser = @import("parser.zig").Parser;
 const decl = @import("parser_decl.zig");
 const stmt = @import("parser_stmt.zig");
@@ -85,7 +86,7 @@ fn isCastKeyword(p: *const Parser) bool {
     const s = p.tokSlice();
     const casts = [_][]const u8{
         "int", "integer", "float", "double", "real", "string",
-        "binary", "array", "object", "bool", "boolean", "unset",
+        "binary", "array", "object", "bool", "boolean", "unset", "void",
     };
     for (casts) |c| {
         if (std.mem.eql(u8, c, s)) return true;
@@ -178,6 +179,17 @@ pub fn parseBinary(p: *Parser, min_prec: u8) ast.ParseError!?Index {
         if (bp[0] == 0 or bp[0] < min_prec) break;
         const op = p.nextToken();
         const next_min = if (t == .double_asterisk) bp[0] else bp[0] + 1;
+        // 管道运算符 `|>`：PHP 词法把 `|` 与 `>` 拆成两个 token，需前瞻合并
+        if (t == .pipe and p.tokTag() == .greater_than) {
+            _ = p.nextToken(); // 吞掉 `>`
+            const rhs = (try parseBinary(p, next_min)) orelse return null;
+            lhs = (try p.addNode(.{
+                .tag = .expr_pipe,
+                .main_token = op,
+                .data = .{ .node_and_node = .{ lhs, rhs } },
+            })) orelse unreachable;
+            continue;
+        }
         const rhs = (try parseBinary(p, next_min)) orelse return null;
         lhs = (try p.addNode(.{
             .tag = .expr_binary,
@@ -197,15 +209,21 @@ pub fn parseUnary(p: *Parser) ast.ParseError!?Index {
         _ = p.nextToken();
         if (isCastKeyword(p)) {
             const cast_tok = p.tok_i;
+            const cast_name = p.tokSlice();
             _ = p.nextToken();
             if (p.tokTag() == .rparen) {
                 _ = p.nextToken();
                 const operand = (try parseUnary(p)) orelse return null;
-                return (try p.addNode(.{
+                const idx = (try p.addNode(.{
                     .tag = .expr_cast,
                     .main_token = cast_tok,
                     .data = .{ .node = operand },
                 })) orelse unreachable;
+                // `(void)` 强转为 8.5 引入
+                if (std.mem.eql(u8, "void", cast_name)) {
+                    p.node_versions.items[@intFromEnum(idx)] = PhpVersion.fromComponents(8, 5);
+                }
+                return idx;
             }
         }
         p.tok_i = save;
@@ -233,11 +251,25 @@ pub fn parseUnary(p: *Parser) ast.ParseError!?Index {
         .kw_clone => {
             const op = p.nextToken();
             const operand = (try parseUnary(p)) orelse return null;
-            return (try p.addNode(.{
+            // 8.5 起 `clone` 可作为函数，支持 `clone($obj, withProperties: [...])` 重设（只读）属性
+            var with_props: OptionalIndex = .none;
+            if (p.tokTag() == .comma) {
+                _ = p.nextToken();
+                if (!p.isSoftKw("withProperties")) p.warn(.expected_identifier);
+                _ = p.nextToken();
+                _ = p.eatToken(.colon);
+                const wp = (try parseUnary(p)) orelse return null;
+                with_props = OptionalIndex.fromIndex(wp);
+            }
+            const idx = (try p.addNode(.{
                 .tag = .expr_clone,
                 .main_token = op,
-                .data = .{ .node = operand },
+                .data = .{ .node_and_opt_node = .{ operand, with_props } },
             })) orelse unreachable;
+            if (with_props != .none) {
+                p.node_versions.items[@intFromEnum(idx)] = PhpVersion.fromComponents(8, 5);
+            }
+            return idx;
         },
         .kw_print => {
             const op = p.nextToken();
@@ -502,11 +534,18 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
                 args = try parseArgs(p);
             }
             const extra = try p.addExtra(NewComponents{ .name = name, .args = .{ .start = args.start, .end = args.end } });
-            return (try p.addNode(.{
+            const idx = (try p.addNode(.{
                 .tag = .expr_new,
-                .main_token = t,
+               
+ .main_token = t,
                 .data = .{ .extra_and_node = .{ extra, name } },
             })) orelse unreachable;
+            // 无括号 `new`（如 `new X->method()`）是 PHP 8.4 引入；有括号形式是基础语法。
+            // 同 tag 多版本，无法由 tag 区分，故在此覆盖。
+            if (args.start == args.end) {
+                p.node_versions.items[@intFromEnum(idx)] = PhpVersion.fromComponents(8, 4);
+            }
+            return idx;
         },
         .lbracket => {
             const t = p.nextToken();

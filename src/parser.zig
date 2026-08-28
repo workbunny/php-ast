@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const Token = @import("token.zig").Token;
+const PhpVersion = @import("version.zig").PhpVersion;
+const BASE_VERSION = @import("version.zig").BASE_VERSION;
 const stmt = @import("parser_stmt.zig");
 
 const Node = ast.Node;
@@ -24,10 +26,13 @@ pub const Parser = struct {
     nodes: ast.NodeList,
     extra_data: std.ArrayList(u32),
     errors: std.ArrayList(ast.Error),
+    /// 与 `nodes` 等长：按节点顺序记录「引入版本」，`BASE_VERSION` 表示基础语法。
+    node_versions: std.ArrayList(PhpVersion),
     tok_i: TokenIndex,
 
     pub fn addNode(p: *Parser, elem: Node) ast.ParseError!?Index {
         try p.nodes.append(p.gpa, elem);
+        try p.node_versions.append(p.gpa, ast.tagVersion(elem.tag));
         return @enumFromInt(p.nodes.len - 1);
     }
 
@@ -81,7 +86,7 @@ pub const Parser = struct {
 
     /// 记录一条解析错误（不中断解析，继续向前兼容最坏情况）。
     pub fn warn(p: *Parser, tag: ast.Error.Tag) void {
-        p.errors.append(p.gpa, .{ .tag = tag, .token = p.tok_i }) catch {};
+        p.errors.append(p.gpa, .{ .tag = tag, .token = p.tok_i, .required = BASE_VERSION }) catch {};
     }
 
     /// 取走当前 token 并把游标推进到下一位，返回被取走的 token。

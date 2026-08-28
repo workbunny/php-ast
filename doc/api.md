@@ -37,7 +37,7 @@ const php_ast = @import("php_ast");
 | `php_ast.ListRange` | `{ start: ExtraIndex, end: ExtraIndex }` | `extra_data` 中的节点列表区间。 |
 | `php_ast.ByteOffset` | `u32` | 源码内绝对字节偏移。 |
 | `php_ast.Node` | struct | 单个 AST 节点：`{ tag, main_token, data }`，`tag` 由 `Node.Tag` 枚举穷举。 |
-| `php_ast.Error` | struct | 一条诊断：`{ tag: Error.Tag, token: TokenIndex }`。 |
+| `php_ast.Error` | struct | 一条诊断：`{ tag: Error.Tag, token: TokenIndex, required: PhpVersion }`。`required` 仅 `unsupported_version` 有意义，为该节点语法要求的 PHP 版本。 |
 | `php_ast.Ast` | struct | 整棵解析结果（见第 3 节）。 |
 | `php_ast.Location` | struct | `tokenLocation` 的返回：`{ line, column, line_start, line_end }`。 |
 
@@ -63,7 +63,7 @@ pub fn parse(
 ```
 
 **简介**：解析入口。内部依次执行词法（`Lexer.tokenize`）与递归下降解析，返回拥有所有权的
-`Ast`。`gpa` 由调用方提供，`version` 控制 8.x 语法开关（如 property hooks、非对称可见性）。
+`Ast`。`gpa` 由调用方提供，`version` 为目标版本：解析时若某节点引入版本高于 `version`，会在 `ast.errors` 中追加 `unsupported_version` 错误（下游可据此拒绝或容忍）。
 `ParseError == std.mem.Allocator.Error`，仅在内存不足时失败。用毕务必调用 `Ast.deinit`。
 
 **示例**：
@@ -222,12 +222,18 @@ if (tree.docCommentBefore(node)) |doc| {
 ### 3.5 错误诊断
 
 `Ast.errors` 字段是 `[]const Error`，收集解析期间的全部诊断（多错误收集，不立即中止）。
-`Error.Tag` 枚举涵盖 `expected_token` / `expected_semi` / `expected_expr` / `unexpected_eof` / `lex_error` 等。
+`Error.Tag` 枚举涵盖 `expected_token` / `expected_semi` / `expected_expr` / `unexpected_eof` / `lex_error` / `unsupported_version` 等。
+
+`Error` 自带 `format(tree, buf)` 方法，把错误渲染成可读文案：对 `unsupported_version`
+会写明「该语法要求的版本」与「`parse` 指定的目标版本」，下游据此即可定位用错了哪一版语法；
+其余错误仅给出 `Tag` 名。`buf` 由调用方提供，返回其有效切片。
 
 ```zig
 if (tree.errors.len > 0) {
+    var buf: [128]u8 = undefined;
     for (tree.errors) |e| {
-        std.debug.print("解析错误 {s} @ token {}\n", .{@tagName(e.tag), e.token});
+        const msg = e.format(&tree, &buf);
+        std.debug.print("解析错误 {s}\n", .{msg});
     }
 }
 ```
@@ -400,19 +406,22 @@ for (tokens.items(.tag)) |tag| { /* ... */ }
 
 ---
 
-## 7. version：PHP 版本谓词
+## 7. version：PHP 版本信息（非门控）
 
 ```zig
 const php_ast.version = @import("version.zig");
 ```
 
+> 本库在 AST 上记录每个节点的「引入版本」；并在 `parse` 时以 `version` 参数为目标版本，对引入版本更高的节点在 `ast.errors` 中追加 `unsupported_version` 错误（门控由调用方决定放/拒）。
+
 ### `PhpVersion`
 
 ```zig
 pub const PhpVersion = struct { id: u32 };
+pub const BASE_VERSION: PhpVersion = .{ .id = 0 }; // 基础语法 / 无版本信息
 ```
 
-版本号以 `major * 10000 + minor * 100` 编码（如 8.4 → `80400`），便于比较。
+版本号以 `major * 10000 + minor * 100` 编码（如 8.4 → `80400`），便于比较。`BASE_VERSION`（id=0）表示基础语法（PHP 8.1 以前）。
 
 #### `fromComponents`
 
@@ -430,21 +439,22 @@ pub fn newerOrEqual(self: PhpVersion, other: PhpVersion) bool
 
 **简介**：判断 `self` 是否不早于 `other`（同版本或更新）。
 
-#### `supportsPropertyHooks` / `supportsAsymmetricVisibility`
+### `Ast.nodeVersion`（逐节点版本信息）
 
 ```zig
-pub fn supportsPropertyHooks(self: PhpVersion) bool
-pub fn supportsAsymmetricVisibility(self: PhpVersion) bool
+pub fn nodeVersion(tree: *const Ast, node: Index) PhpVersion
 ```
 
-**简介**：声明式语法谓词，分别判断能否解析 property hooks（`get`/`set`，8.4）与非对称可见性（`public private(set)`，8.4）。
+**简介**：返回 `node` 的「引入版本」。`id == 0`（`BASE_VERSION`）表示基础语法、未单独记录；8.1 及以后引入的节点记录对应版本。与「节点结构无关」的差异（如 `new` 的无括号形式 8.4、`(void)` 强转 / `clone` 函数式 / 常量注解 / `final` 属性提升等 8.5 项）已在解析点覆盖。
 
 ```zig
-const php84 = php_ast.PhpVersion.fromComponents(8, 4);
-if (php84.supportsPropertyHooks()) {
-    // 解析器会接受 property hooks 语法
+for (tree.nodes.items(.tag), 0..) |tag, i| {
+    const v = tree.nodeVersion(@enumFromInt(i));
+    // v.id == 0 为基础语法；否则为引入版本号（如 80100 = 8.1）
 }
 ```
+
+> `parse` 的 `version` 参数作为目标版本：解析时若某节点引入版本高于 `version`，会在 `ast.errors` 中追加 `unsupported_version` 错误（错误携带 `required` 字段与 `format` 文案，由调用方决定放/拒）；是否真正拒绝由调用方结合 `nodeVersion` 完成。
 
 ---
 
@@ -463,8 +473,9 @@ pub fn main() !void {
     const tree = try php_ast.parse(alloc, src, php_ast.PhpVersion.fromComponents(8, 4));
     defer tree.deinit(alloc);
 
-    // 报告解析错误
-    for (tree.errors) |e| std.debug.print("ERR {s}@token {}\n", .{ @tagName(e.tag), e.token });
+    // 报告解析错误（format 会为版本门控错误给出可读文案）
+    var buf: [128]u8 = undefined;
+    for (tree.errors) |e| std.debug.print("ERR {s}\n", .{e.format(&tree, &buf)});
 
     // 遍历所有节点
     var n: usize = 0;

@@ -46,7 +46,6 @@ pub fn childNodes(gpa: std.mem.Allocator, tree: ast.Ast, node: Index, out: *std.
         .stmt_expression,
         .expr_const_fetch,
         .expr_unary,
-        .expr_clone,
         .expr_eval,
         .expr_include,
         .expr_throw,
@@ -292,8 +291,14 @@ pub fn childNodes(gpa: std.mem.Allocator, tree: ast.Ast, node: Index, out: *std.
             try appendOpt(gpa, out, c.key);
         },
 
+        .expr_clone => {
+            try out.append(gpa, data.node_and_opt_node[0]);
+            try appendOpt(gpa, out, data.node_and_opt_node[1]);
+        },
+
         // 双目 / 赋值 / 访问类（node_and_node）
         .expr_binary,
+        .expr_pipe,
         .expr_assign,
         .expr_assign_op,
         .expr_assign_ref,
