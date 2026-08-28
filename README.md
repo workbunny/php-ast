@@ -1,3 +1,13 @@
+<p align="center">
+  <img width="260px" src="https://chaz6chez.cn/images/workbunny-logo.png" alt="workbunny">
+</p>
+
+<h1 align="center">workbunny/php-ast</h1>
+
+<p align="center">
+  🐇PHP Abstract Syntax Tree (AST) library implemented in Zig. 🐇
+</p>
+
 # php-ast
 
 ## 简介
