@@ -21,6 +21,12 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 - 结构数组而非指针树：节点存于连续数组，节点间以索引互相引用，避免逐节点堆分配与指针跳转。
 - 多错误收集：词法与语法错误尽量继续解析并累计，调用方一次获得全部诊断。
 - 版本信息 + 门控：解析结果在 `Ast.nodeVersion(node)` 上提供逐节点的「引入版本」（基础语法记 `BASE_VERSION`/`id=0`）；同时，`parse` 的 `version` 参数作为目标版本，任何引入版本高于目标的节点会在 `ast.errors` 中记为 `unsupported_version` 错误，交由调用方决定放行或拒绝。
+- 信息分层：AST 只承载语义，语法细节（括号、修饰符、运算符子类型等）由结构/字段/token 隐式承载，原文与 token 流常驻可溯源。详见 [doc/zen.md](doc/zen.md)。
+
+## 文档
+
+- [doc/zen.md](doc/zen.md) — 设计哲学、特殊点总表、适用性边界
+- [doc/api.md](doc/api.md) — 公开 API 手册
 
 ## 设计
 
@@ -47,7 +53,9 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 - 解析器采用手写递归下降，每个函数对应一条语法产生式，便于对照 PHP 官方语法。相较 PHP-Parser 的 LALR 表驱动，自动生成的大量动作表与转移表难以阅读，与偏好可读代码的原则相悖。
 - AST 内存布局与访问方式以 `std.zig.Ast` 为范本，对 Zig 开发者而言是地道用法。节点为定长扁平结构（`tag` + `main_token` + 小型 `data` 联合），超出两个直接子节点的负载序列化进 `extra_data` 大板，节点 `data` 仅保留指向该段的 `ExtraIndex`。
 - 注释在 PHP 中具有运行期语义（反射、PHPDoc、Attribute、静态分析）。所有注释作为 token 保留于 `tokens`，声明类节点可经 `docCommentBefore` 取回前置 docblock；普通表达式节点不携带注释字段，零开销。
-- 位置信息不冗余存储：节点仅存 `main_token`，首尾 token 经 `firstToken`/`lastToken` 派生，行列号由 `tokenLocation` 按需现算。
+- 位置信息不冗余存储：节点仅存 `main_token`（代表性 token，如二元运算的运算符），首尾 token 经
+  `firstToken`/`lastToken` 沿子节点递归派生，行列号由 `tokenLocation` 按需现算。尾部定界符
+  （`;` `}`）不是子节点，另由 `trailingDelimiter` 并入区间。
 - 词法、语法层面的非法输入通过错误集合返回，而非静默产出错误的 AST。
 
 ## 快速开始
@@ -98,13 +106,46 @@ pub fn main() !void {
 }
 ```
 
-运行测试（`src/tests/` 下各 `*_test.zig`）：
+运行测试（测试就近写在各被测源文件底部，遵循 Zig 惯例）：
 
 ```bash
 zig build test
 ```
 
 可在容器内执行：`zig build test --cache-dir /tmp/zig-cache --summary all`。
+
+### 测试组织
+
+`test` 块就近写在被测源文件底部（Zig 标准库与生态的主流做法），而非集中于独立
+`tests/` 目录。这样测试与实现同处一文件、便于对照阅读，且能覆盖文件内的私有函数。
+收集是自动的：`build.zig` 里 `b.addTest(.{ .root_module = lib_mod })` 会递归扫描依赖
+树中的全部 `test` 块，新增测试文件时**无需**改动 `build.zig`。
+
+| 机制               | 说明                                                                                                               |
+|--------------------|--------------------------------------------------------------------------------------------------------------------|
+| `src/testing.zig`  | 共享断言工具：`expectNoErrors`/`expectTagCounts`/`countTag`/`firstNode`/`expectSourceSlice` 与版本常量 `v80`–`v85` |
+| `src/coverage.zig` | 覆盖矩阵：为每个 `Node.Tag` / `Token.Tag` 固定一条最小用例，由 `comptime` 强制完整性                               |
+| `src/dump.zig`     | 把 AST 渲染为缩进文本，供调试与黄金快照使用                                                                        |
+| `tests/golden/`    | 黄金快照：`*.php` 与其期望的树形 `*.txt` 逐字节比对                                                                |
+| 命名规范           | `test "<模块> :: <场景> :: <预期>"`，如 `test "expr :: 赋值 :: 普通/复合/引用三种形式"`                            |
+
+**覆盖闸门（`src/coverage.zig`）**：矩阵按声明顺序逐条列出最小用例，`comptime` 校验
+条目数与顺序。新增节点/词法种类却忘记补用例时，**编译直接失败**并给出中文错误信息，
+而非等到运行时才发现覆盖率下降。运行时逐条执行矩阵，确认用例仍能产出对应种类。
+
+词法一侧的用例由 `Token.keywords` / `Token.operators` 反查生成——新增关键字只改
+`token.zig` 一处，测试自动覆盖，无需同步维护两份表。
+
+**黄金快照**：`tests/golden/**/*.php` 的解析结果与同名 `.txt` 比对，一条断言锁住整棵树
+的结构。新增语法时补一个 fixture 即可，不必手写大量断言。快照同时记录诊断，因此
+「引入新错误」也会被比出来。解析行为有意变更后更新快照：
+
+```bash
+zig build test -Dupdate-golden   # 重新生成快照
+git diff tests/golden            # 必须复核，确认改动符合预期
+```
+
+未复核就更新，会让快照退化为「把错误结果固化下来」。
 
 ## 源码结构
 
@@ -117,14 +158,17 @@ zig build test
 | `src/ast.zig`         | `Ast` SoA 结构、`Node`/`Tag` 枚举、全部 Components、`extra_data` 编解码、`parse` 入口                        |
 | `src/token.zig`       | `Token.Tag` 枚举与对应 lexeme 文本                                                                           |
 | `src/lexer.zig`       | 手写词法器，输出含注释 token 的 token 流（以 `eof` 哨兵结尾）                                                |
-| `src/version.zig`     | `PhpVersion` 版本载体与比较工具（`fromComponents`/`newerOrEqual`），不做语法门控                             |
+| `src/version.zig`     | `PhpVersion` 版本载体与比较工具（`fromComponents`/`newerOrEqual`）                                           |
 | `src/parser.zig`      | `Parser` core：`addNode`/`addExtra`/`addNodeList`/`expectToken`/`eatToken`/`tokTag` 等共享机件 + `parseRoot` |
 | `src/parser_stmt.zig` | 语句级 `parse*` 与 Components（if/while/foreach/return/echo/block…）                                         |
 | `src/parser_decl.zig` | 声明级 `parse*`（类/接口/trait/enum、函数、成员、属性钩子…）                                                 |
 | `src/parser_expr.zig` | 表达式级 `parse*` 与运算符优先级表（含静态/动态访问后缀、闭包、箭头函数…）                                   |
 | `src/parser_type.zig` | 类型级 `parse*`（可空/联合/交集/DNF/标识符/伪类型/泛型/数组后缀…）                                           |
-| `src/walk.zig`        | 遍历与注释：`childNodes`/`walk`/`leadingComments`/`trailingComments`                                         |
-| `src/tests/`          | `ast_test.zig`、`lexer_test.zig` 回归测试                                                                    |
+| `src/walk.zig`        | 遍历与注释：`childNodes`/`walk`/`walkStack`/`leadingComments`/`trailingComments`（子节点关系在 `ast.zig`）   |
+| `src/testing.zig`     | 共享测试断言工具（对应 `std.testing` 的项目级等价物）                                                        |
+| `src/coverage.zig`    | 覆盖矩阵，编译期强制每个 `Node.Tag` / `Token.Tag` 都有用例                                                   |
+| `src/dump.zig`        | AST 文本渲染，用于调试与黄金快照                                                                             |
+| `src/golden.zig`      | 黄金快照比对（`tests/golden/**`），`-Dupdate-golden` 可重新生成                                              |
 
 ## 说明
 
@@ -290,14 +334,14 @@ zig build test
 
 #### 8.5 语法
 
-| 能力                                              | PHP 版本 | 状态 | 备注                                                                     |
-|---------------------------------------------------|----------|------|--------------------------------------------------------------------------|
-| 管道运算符 `\|>`（`Expr\Pipe`）                   | 8.5      | ✓   | 独立 `expr_pipe` 节点；词法把 `\|` 与 `>` 拆成两个 token，解析时前瞻合并 |
-| `(void)` 强转                                     | 8.5      | ✓   | 复用 `expr_cast` 节点，仅当强转类型为 `void` 时标注 8.5                  |
-| `clone($obj, withProperties: [...])`              | 8.5      | ✓   | `expr_clone` 节点新增可选的 `withProperties` 子节点                      |
-| 常量上的注解（类常量 / 全局常量）                 | 8.5      | ✓   | `stmt_class_const` / `const_decl` 带属性组时标注 8.5                     |
-| 构造器属性提升 + `final`（`public final int $x`） | 8.5      | ✓   | `param` 节点在「提升且含 final 修饰」时标注 8.5                          |
-| 静态属性非对称可见性（`public protected(set) static`） | 8.5      | ✓   | 非对称可见性（8.4）现已解析识别（set 侧可见性 != 3）；静态叠加即 8.5    |
+| 能力                                                   | PHP 版本 | 状态 | 备注                                                                     |
+|--------------------------------------------------------|----------|------|--------------------------------------------------------------------------|
+| 管道运算符 `\|>`（`Expr\Pipe`）                        | 8.5      | ✓   | 独立 `expr_pipe` 节点；词法把 `\|` 与 `>` 拆成两个 token，解析时前瞻合并 |
+| `(void)` 强转                                          | 8.5      | ✓   | 复用 `expr_cast` 节点，仅当强转类型为 `void` 时标注 8.5                  |
+| `clone($obj, withProperties: [...])`                   | 8.5      | ✓   | `expr_clone` 节点新增可选的 `withProperties` 子节点                      |
+| 常量上的注解（类常量 / 全局常量）                      | 8.5      | ✓   | `stmt_class_const` / `const_decl` 带属性组时标注 8.5                     |
+| 构造器属性提升 + `final`（`public final int $x`）      | 8.5      | ✓   | `param` 节点在「提升且含 final 修饰」时标注 8.5                          |
+| 静态属性非对称可见性（`public protected(set) static`） | 8.5      | ✓   | 非对称可见性（8.4）现已解析识别（set 侧可见性 != 3）；静态叠加即 8.5     |
 
 #### 遍历与注释
 

@@ -1,0 +1,58 @@
+(root `<?php`
+  (stmt_try `try`
+    (stmt_block `{`
+      (stmt_expression `foo`
+        (expr_func_call `foo`
+          (name `foo`)
+        )
+      )
+    )
+    (stmt_catch `catch`
+      (name `FooException`)
+      (name `BarException`)
+      (stmt_block `{`
+        (stmt_throw `throw`
+          (expr_new `new`
+            (name `RuntimeException`)
+            (expr_argument `'x'`
+              (expr_string `'x'`)
+            )
+            (expr_argument `0`
+              (expr_int `0`)
+            )
+            (expr_argument `$e`
+              (expr_variable `$e`)
+            )
+          )
+        )
+      )
+    )
+    (stmt_block `{`
+      (stmt_expression `cleanup`
+        (expr_func_call `cleanup`
+          (name `cleanup`)
+        )
+      )
+    )
+  )
+  (stmt_function `function` name=`gen`
+    (stmt_block `{`
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_int `1`)
+        )
+      )
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_variable `$k`)
+          (expr_variable `$v`)
+        )
+      )
+      (stmt_expression `yield`
+        (expr_yield_from `yield`
+          (expr_variable `$it`)
+        )
+      )
+    )
+  )
+)

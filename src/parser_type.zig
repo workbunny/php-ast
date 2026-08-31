@@ -12,6 +12,7 @@ const ExtraIndex = ast.ExtraIndex;
 const TokenIndex = ast.TokenIndex;
 
 const expr = @import("parser_expr.zig");
+const testing = @import("testing.zig");
 
 /// 泛型类型 `Foo<int>` / `list<int>` / `array<int, int>`：承载基础类型与类型实参列表。
 pub const GenericTypeComponents = struct {
@@ -96,11 +97,13 @@ pub fn parseTypeAtom(p: *Parser) ast.ParseError!?Index {
 
     // 数组后缀：`T[]` / `T[][]`（php-ast 的 `Type\Array_`）
     while (p.tokTag() == .lbracket) {
-        _ = p.nextToken();
+        // 主 token 取 `[` 而非内部类型——否则 `(A&B)[]` 的区间停在 `&`，
+        // 快照与代码改写都看不出数组后缀。
+        const lbracket = p.nextToken();
         _ = p.eatToken(.rbracket);
         result = (try p.addNode(.{
             .tag = .type_array_of,
-            .main_token = p.nodeMainToken(result),
+            .main_token = lbracket,
             .data = .{ .node = result },
         })) orelse unreachable;
     }
@@ -152,4 +155,133 @@ fn parseTypeArgs(p: *Parser) ast.ParseError!?ListRange {
     }
     _ = p.eatToken(.greater_than);
     return try p.addNodeList(args.items);
+}
+
+// ===========================================================================
+// 测试：类型语法
+// ===========================================================================
+
+test "type :: 联合/交集/可空 :: 三种复合类型各自成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f(int|string $x, ?Foo\Bar &$y): A&B { return 1; }
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .type_union = 1,
+        .type_nullable = 1,
+        .type_intersection = 1,
+    });
+    // 名字类型恰为 5 个：int / string / Foo\Bar / A / B
+    try std.testing.expectEqual(@as(usize, 5), testing.countTag(tree, .type_name));
+}
+
+test "type :: 可空前缀 :: ? 作用于其后整个类型" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php function f(?int $x) {}", testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .type_nullable = 1, .type_name = 1 });
+}
+
+test "type :: 伪类型 self/parent/static :: 产出专用节点而非名字类型" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f(self $a, parent $b, static $c): callable {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .type_self = 1,
+        .type_parent = 1,
+        .type_static = 1,
+    });
+}
+
+test "type :: 关键字类型 true/false/null :: 归入 type_name" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f(): true {}
+        \\function g(): false {}
+        \\function h(): null {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .type_name = 3, .name = 3 });
+}
+
+test "type :: 泛型 :: list<int> 与 Foo<string> 产出 type_generic" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f(list<int> $a, Foo<string> $b) {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .type_generic = 2 });
+}
+
+test "type :: 数组后缀 :: Foo[] 与多维 Foo[][] 逐层包裹" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f(Foo[] $a, Bar[][] $b) {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    // Foo[] 一层、Bar[][] 两层
+    try testing.expectTagCounts(tree, .{ .type_array_of = 3 });
+}
+
+test "type :: DNF 联合含括号交集 :: 括号不单独成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f((Countable&ArrayAccess)|int $x) {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    // 括号仅改变优先级，不引入节点（与 PHP-Parser 行为一致）
+    try testing.expectTagCounts(tree, .{
+        .type_union = 1,
+        .type_intersection = 1,
+    });
+}
+
+test "type :: 数组后缀主 token :: 指向 [ 而非内部类型" {
+    // 回归：此前 main_token 取内部类型的（`(A&B)` 为 `&`），快照与区间都看不出
+    // 数组后缀。注：`(`/`)` 分组 token 未记录，故区间不含括号是另一已知项。
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php function f((A&B)[] $x) {}", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const arr = testing.firstNode(tree, .type_array_of) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("[", tree.tokenSlice(tree.nodeMainToken(arr)));
+}
+
+test "type :: DNF 交集叠加数组后缀 :: (A&B)[] 组合成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f((Countable&ArrayAccess)[] $x) {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .type_intersection = 1,
+        .type_array_of = 1,
+    });
 }

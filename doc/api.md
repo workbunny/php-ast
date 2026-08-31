@@ -7,8 +7,10 @@ const php_ast = @import("php_ast");
 ```
 
 各子模块以同名命名空间再导出，可按 `php_ast.ast` / `php_ast.walk` / `php_ast.token`
-/ `php_ast.lexer` / `php_ast.version` 访问。`root.zig` 同时再导出顶层便捷别名
-`php_ast.parse`、`php_ast.Ast`、`php_ast.PhpVersion`、`php_ast.Token`、`php_ast.Node`、`php_ast.Index`。
+/ `php_ast.lexer` / `php_ast.version` / `php_ast.dump` 访问。`root.zig` 同时再导出顶层
+便捷别名 `php_ast.parse`、`php_ast.Ast`、`php_ast.ParseError`、`php_ast.Node`、
+`php_ast.PhpVersion`、`php_ast.Token`。其余类型（如 `Index`、`ByteOffset`）经
+`php_ast.ast.Index` 等子模块路径访问。
 
 ---
 
@@ -20,7 +22,8 @@ const php_ast = @import("php_ast");
 4. [walk：树遍历与注释](#4-walk-树遍历与注释)
 5. [token：词法单元](#5-token-词法单元)
 6. [lexer：词法分析](#6-lexer-词法分析)
-7. [version：PHP 版本谓词](#7-version-php-版本谓词)
+7. [version：PHP 版本谓词](#7-version-php-版本信息与门控)
+8. [dump：AST 文本渲染](#8-dump-ast-文本渲染)
 
 ---
 
@@ -35,7 +38,7 @@ const php_ast = @import("php_ast");
 | `php_ast.OptionalTokenIndex` | `enum(u32)` | 可选 token 下标，同上；`unwrap()` 得 `?TokenIndex`。 |
 | `php_ast.SubRange` | `{ start: ExtraIndex, end: ExtraIndex }` | `extra_data` 中的可选区间（可空）。 |
 | `php_ast.ListRange` | `{ start: ExtraIndex, end: ExtraIndex }` | `extra_data` 中的节点列表区间。 |
-| `php_ast.ByteOffset` | `u32` | 源码内绝对字节偏移。 |
+| `php_ast.ast.ByteOffset` | `u32` | 源码内绝对字节偏移（token 起止用，见 token 章节的 `Token.ByteOffset = usize` 之差异）。 |
 | `php_ast.Node` | struct | 单个 AST 节点：`{ tag, main_token, data }`，`tag` 由 `Node.Tag` 枚举穷举。 |
 | `php_ast.Error` | struct | 一条诊断：`{ tag: Error.Tag, token: TokenIndex, required: PhpVersion }`。`required` 仅 `unsupported_version` 有意义，为该节点语法要求的 PHP 版本。 |
 | `php_ast.Ast` | struct | 整棵解析结果（见第 3 节）。 |
@@ -199,8 +202,61 @@ pub fn firstToken(tree: Ast, node: Index) TokenIndex
 pub fn lastToken(tree: Ast, node: Index) TokenIndex
 ```
 
-**简介**：取某节点覆盖的**首/末 token 下标**。`root` 递归到首/末条语句；其余节点即其 `main_token`。
-节点无需冗余存储首尾偏移，位置现算。
+**简介**：取某节点覆盖的**首/末 token 下标**（含其全部后代），`root` 委托到首/末条顶层语句。
+注意 `main_token` 只是节点的**代表性** token（如二元运算的运算符），并非起始位置；本组函数
+沿子节点递归取最小/最大值，得到真正的区间：
+
+```zig
+// <?php $a = 1 + 2;
+const bin = /* expr_binary 节点 */;
+tree.tokenSlice(tree.firstToken(bin)); // "1" —— 非主 token "+"
+tree.tokenSlice(tree.lastToken(bin));  // "2"
+```
+
+尾部定界符（`;`、`}`）不是任何节点的子节点，由 `trailingDelimiter` 单独并入，因此各类
+语句的区间都含其结尾分号。未收录者（叶子表达式、以冒号收尾的 `case`/`default`/标签）返回 `null`。
+
+#### `forEachChild`
+
+```zig
+pub fn forEachChild(
+    tree: Ast,
+    node: Index,
+    ctx: anytype,
+    comptime onChild: fn (@TypeOf(ctx), Index) anyerror!void,
+) !void
+```
+
+**简介**：遍历 `node` 的全部直接子节点，逐个交给 `onChild`。这是「某节点的直接子引用有哪些」
+的唯一事实来源（`walk`、`firstToken`、`lastToken` 均构建于其上）。采用访问者而非返回切片，
+以做到**零分配**。叶子节点不产生任何子节点。
+
+#### `trailingDelimiter`
+
+```zig
+pub fn trailingDelimiter(tree: Ast, node: Index) ?TokenIndex
+```
+
+**简介**：取节点的尾部定界符 token（分号、右花括号等），无则 `null`。定界符不是子节点，
+故不计入 `forEachChild`；要让 `lastToken` 覆盖完整源码区间必须单独取回。
+
+#### `nameToken`
+
+```zig
+pub fn nameToken(tree: Ast, node: Index) ?TokenIndex
+```
+
+**简介**：取节点的**名字 token**（函数名、类名、属性名、常量名、case 名、参数名、被适配的方法名等），
+无则 `null`。名字是 token 而非子节点，故不出现在 `forEachChild` 里。
+
+注意声明类节点的 `main_token` 往往是关键字（`function`/`class`/`enum`），只靠它取不到名字：
+`nameToken` 才返回真正的名字。属性的名字 token 含 `$` 前缀（与源码一致）。
+
+```zig
+const f = /* stmt_function 节点 */;
+tree.tokenSlice(tree.nodeMainToken(f)); // "function"
+tree.tokenSlice(tree.nameToken(f).?);   // "foo"
+```
 
 ### 3.4 注释与 docblock
 
@@ -253,9 +309,9 @@ pub fn childNodes(
 ) !void
 ```
 
-**简介**：枚举某节点的**全部直接子节点**，追加到 `out`。这是树遍历与「full 视图」重装的基石——
-每个节点的所有直接子引用都在此显式给出（区间型子节点展开为列表，可选子节点含 `none` 判定）。
-叶子节点（仅含主 token）不产生子节点。
+**简介**：枚举某节点的**全部直接子节点**，追加到 `out`。子节点关系定义在 `Ast.forEachChild`，
+此处仅适配为「收集到 ArrayList」的形态，供需要物化子节点列表的场合使用；不需物化时直接用
+`forEachChild` 可免分配。叶子节点（仅含主 token）不产生子节点。
 
 ### `walk`
 
@@ -343,7 +399,31 @@ const php_ast.token = @import("token.zig");
 
 - `Token.Tag`：所有词法种类的扁平枚举（`eof` / `int_literal` / `kw_if` / `arrow` / `open_tag` …），与 PHP 官方 `zend_language_scanner` 对应。
 - `Token.TokenList`：`std.MultiArrayList`，SoA 存 `tag`/`start`/`end` 三列。
-- `Token.ByteOffset`：`usize`，源码绝对字节偏移。
+- `Token.ByteOffset`：`usize`，源码绝对字节偏移。注意与 `ast.ByteOffset`（`u32`）的区别：
+  `Token.ByteOffset` 用于 token 流自身的下标换算（`MultiArrayList` 存取），`ast.ByteOffset`
+  用于 `Ast.tokenStart`/`tokenEnd` 的返回类型。
+
+### `Token.keywords` / `Token.operators`（表）
+
+```zig
+pub const keywords: [N]Mapping   // 关键字文本 → Tag，如 "if" → .kw_if
+pub const operators: [M]Mapping  // 运算符/标点文本 → Tag，如 "===" → .equal_equal_equal
+```
+
+**简介**：关键字与运算符的**单点维护表**。词法器、`keywordTag`/`opTag`、`lexeme`、以及测试的
+词法覆盖矩阵均读这两张表——新增关键字或运算符只改这一处，其余自动生效。
+
+`operators` 按文本长度从长到短排列（顺序有语义：多字符运算符必须优先于单字符，如 `==` 先于 `=`）。
+
+#### `keywordTag` / `opTag`
+
+```zig
+pub fn keywordTag(t: []const u8) ?Tag
+pub fn opTag(t: []const u8) ?Tag
+```
+
+**简介**：把文本映射到对应 `Tag`，无法识别返回 `null`。`opTag` 按 `operators` 顺序匹配，
+多字符自然优先。供词法器与需要「文本 ↔ 种类」互查的下游使用。
 
 ### `Token.lexeme`
 
@@ -352,7 +432,7 @@ pub fn lexeme(tag: Tag) ?[]const u8
 ```
 
 **简介**：返回某词法种类固定对应的字面文本（如 `Token.lexeme(.arrow) == "->"`）。仅对标点/运算符有效；
-标识符、字面量需经 `Ast.tokenSlice` 从源码切片取得，故返回 `null`。
+标识符、字面量需经 `Ast.tokenSlice` 从源码切片取得，故返回 `null`。由 `operators` 反查，不另存一份映射。
 
 ```zig
 try std.testing.expect(std.mem.eql(u8, php_ast.token.Token.lexeme(.double_colon).?, "::"));
@@ -406,13 +486,13 @@ for (tokens.items(.tag)) |tag| { /* ... */ }
 
 ---
 
-## 7. version：PHP 版本信息（非门控）
+## 7. version：PHP 版本信息与门控
 
 ```zig
 const php_ast.version = @import("version.zig");
 ```
 
-> 本库在 AST 上记录每个节点的「引入版本」；并在 `parse` 时以 `version` 参数为目标版本，对引入版本更高的节点在 `ast.errors` 中追加 `unsupported_version` 错误（门控由调用方决定放/拒）。
+> 本库在 AST 上记录每个节点的「引入版本」；并在 `parse` 时以 `version` 参数为目标版本，对引入版本更高的节点在 `ast.errors` 中追加 `unsupported_version` 错误（放行或拒绝由调用方决定）。
 
 ### `PhpVersion`
 
@@ -456,6 +536,21 @@ for (tree.nodes.items(.tag), 0..) |tag, i| {
 
 > `parse` 的 `version` 参数作为目标版本：解析时若某节点引入版本高于 `version`，会在 `ast.errors` 中追加 `unsupported_version` 错误（错误携带 `required` 字段与 `format` 文案，由调用方决定放/拒）；是否真正拒绝由调用方结合 `nodeVersion` 完成。
 
+### `tagVersion`（节点种类 → 引入版本）
+
+```zig
+pub fn tagVersion(tag: Node.Tag) PhpVersion
+```
+
+**简介**：查某节点**种类**的「引入版本」——即该语法首次出现的 PHP 版本（基础语法返回
+`BASE_VERSION`/id=0）。与 `Ast.nodeVersion`（逐节点实例）的区别：本函数只按种类查，不需要
+解析结果，适合在 AST 之外做静态判定。
+
+```zig
+php_ast.ast.tagVersion(.stmt_enum).id   // 80100（enum 为 8.1 引入）
+php_ast.ast.tagVersion(.expr_pipe).id   // 80500（管道为 8.5 引入）
+```
+
 ---
 
 ## 最小可运行示例（汇总）
@@ -490,4 +585,52 @@ pub fn main() !void {
         std.debug.print("doc: {s}\n", .{tree.tokenSlice(doc)});
     }
 }
+```
+
+---
+
+## 8. dump：AST 文本渲染
+
+```zig
+const php_ast.dump = @import("dump.zig");
+```
+
+把 AST 渲染为可读的缩进文本，用于**调试**与**黄金快照比对**（`tests/golden/`）。
+
+```text
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_int `1`)
+    )
+  )
+)
+```
+
+每个节点一行，缩进表示深度，反引号内是该节点覆盖的源码文本（限定名取完整区间如
+`Foo\Bar`，其余取主 token；声明节点额外打印 `name=` 名字）。特殊字符（换行等）被转义，
+保证「一节点一行」。
+
+#### `dumpTree`
+
+```zig
+pub fn dumpTree(gpa: std.mem.Allocator, tree: ast.Ast, w: anytype) !void
+```
+
+**简介**：从 `tree.root` 渲染整棵树到 writer `w`。
+
+#### `dumpNode`
+
+```zig
+pub fn dumpNode(gpa: std.mem.Allocator, tree: ast.Ast, node: Index, depth: usize, w: anytype) !void
+```
+
+**简介**：渲染以 `node` 为根的子树，`depth` 为起始缩进层级。
+
+```zig
+var buf: std.Io.Writer.Allocating = .init(alloc);
+defer buf.deinit();
+try php_ast.dump.dumpTree(alloc, tree, &buf.writer);
+std.debug.print("{s}", .{buf.written()});
 ```

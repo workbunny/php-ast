@@ -1,0 +1,66 @@
+(root `<?php`
+  (stmt_declare `declare`
+    (declare_declare `strict_types`
+      (expr_int `1`)
+    )
+  )
+  (stmt_namespace `namespace`
+    (name `App\Service`)
+    (stmt_use `use`
+      (use_use `Foo`
+        (name `Foo\Bar`)
+      )
+    )
+    (stmt_group_use `use`
+      (name `Foo`)
+      (use_use `Baz`
+        (name `Baz`)
+      )
+      (use_use `Qux`
+        (name `Qux`)
+      )
+    )
+    (stmt_use `use`
+      (use_use `strlen`
+        (name `strlen`)
+      )
+    )
+    (stmt_use `use`
+      (use_use `PHP_EOL`
+        (name `PHP_EOL`)
+      )
+    )
+    (stmt_const `const`
+      (const_decl `A`
+        (expr_int `1`)
+      )
+      (const_decl `B`
+        (expr_int `2`)
+      )
+    )
+    (stmt_interface `interface` name=`Shape`
+      (stmt_method `function` name=`area`
+        (type_name `float`
+          (name `float`)
+        )
+      )
+    )
+    (stmt_trait `trait` name=`Logger`
+      (stmt_trait_use `use`
+        (name `Other`)
+        (trait_use_adaptation_alias `log`
+          (name `Other`)
+        )
+      )
+    )
+    (stmt_enum `enum` name=`Suit`
+      (type_name `string`
+        (name `string`)
+      )
+      (stmt_case `case` name=`Hearts`)
+      (stmt_case `case` name=`Clubs`
+        (expr_string `'c'`)
+      )
+    )
+  )
+)

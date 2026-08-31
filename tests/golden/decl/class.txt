@@ -1,0 +1,64 @@
+(root `<?php`
+  (stmt_class `class` name=`Foo`
+    (name `Bar`)
+    (name `Baz`)
+    (stmt_class_const `const` name=`NAME`
+      (expr_string `'x'`)
+    )
+    (stmt_property `$n`
+      (type_name `int`
+        (name `int`)
+      )
+      (expr_int `1`)
+    )
+    (stmt_property `$s`
+      (type_name `string`
+        (name `string`)
+      )
+      (property_hook `get`
+        (expr_property_fetch `$this`
+          (expr_variable `$this`)
+          (name `s`)
+        )
+      )
+      (property_hook `set`
+        (expr_assign `=`
+          (expr_property_fetch `$this`
+            (expr_variable `$this`)
+            (name `s`)
+          )
+          (expr_variable `$v`)
+        )
+        (param `$v`
+          (type_name `string`
+            (name `string`)
+          )
+        )
+      )
+    )
+    (stmt_method `function` name=`__construct`
+      (param `$x`
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (param `$y`
+        (type_name `string`
+          (name `string`)
+        )
+        (expr_string `''`)
+      )
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`make`
+      (type_static `static`)
+      (stmt_block `{`
+        (stmt_return `return`
+          (expr_new `new`
+            (name `static`)
+          )
+        )
+      )
+    )
+  )
+)

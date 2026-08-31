@@ -4,6 +4,7 @@ const Token = @import("token.zig").Token;
 const PhpVersion = @import("version.zig").PhpVersion;
 const BASE_VERSION = @import("version.zig").BASE_VERSION;
 const stmt = @import("parser_stmt.zig");
+const testing = @import("testing.zig");
 
 const Node = ast.Node;
 const Index = ast.Index;
@@ -173,3 +174,46 @@ pub const Parser = struct {
         return root_node;
     }
 };
+
+// ===========================================================================
+// 测试：错误恢复与诊断收集
+// ===========================================================================
+
+test "parser :: 错误恢复 :: 缺表达式产出 stmt_error 而非中断" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a = ;", testing.v84);
+    defer tree.deinit(gpa);
+    // 解析不致命：错误以诊断形式收集，并保留错误节点
+    try std.testing.expect(testing.countTag(tree,.stmt_error) >= 1);
+}
+
+test "parser :: 错误恢复 :: 出错后继续解析后续语句" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a = ; $b = 42;", testing.v84);
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len >= 1);
+    // 出错点之后的合法语句仍应被解析出来
+    try std.testing.expectEqual(@as(usize, 1), testing.countTag(tree,.expr_int));
+}
+
+test "parser :: 多错误 :: 一次收集全部诊断而非遇错即停" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php => 1; => 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len >= 2);
+}
+
+test "parser :: 未闭合括号 :: 产出诊断且不崩溃" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php if ($a { }", testing.v84);
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len >= 1);
+}
+
+test "parser :: 空输入 :: 产出空 root 而非错误" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try std.testing.expectEqual(@as(usize, 0), tree.rootStmts().len);
+}

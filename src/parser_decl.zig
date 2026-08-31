@@ -14,6 +14,7 @@ const PhpVersion = @import("version.zig").PhpVersion;
 
 const stmt = @import("parser_stmt.zig");
 const expr = @import("parser_expr.zig");
+const testing = @import("testing.zig");
 const types = @import("parser_type.zig");
 
 /// 声明类节点（函数/类/属性/参数/属性组等）的附加负载组件，序列化进 extra_data。
@@ -26,6 +27,8 @@ pub const CaseComponents = struct {
     name: TokenIndex,
     value: OptionalIndex,
     attrs: SubRange,
+    /// 声明结尾的 `;`。定界符不是子节点，只能这样单独存。
+    semi: TokenIndex,
 };
 
 pub const TypeDeclComponents = struct {
@@ -44,6 +47,8 @@ pub const PropertyComponents = struct {
     default: OptionalIndex,
     hooks: SubRange,
     attrs: SubRange,
+    /// 声明结尾的 `;`。
+    semi: TokenIndex,
 };
 
 pub const PropertyHookComponents = struct {
@@ -104,6 +109,8 @@ pub const ClassConstComponents = struct {
     flags: u32, // 可见性：0=public 1=protected 2=private
     value: OptionalIndex,
     attrs: SubRange,
+    /// 声明结尾的 `;`。
+    semi: TokenIndex,
 };
 
 /// 解析函数声明（顶层或类内方法）：`function name(params): ret { body }`，
@@ -144,19 +151,27 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
     var attrs = p.emptySubRange();
     if (p.tokTag() == .hash) attrs = try parseAttrGroups(p);
     var flags: u32 = 0;
-    // 构造器属性提升：`public` / `protected` / `private` 置于参数类型前
+    // 构造器属性提升：`public`/`protected`/`private` 置于参数类型前。
+    // 修饰符与类型间的顺序在 PHP 中较自由（`public readonly int`、`readonly public int`），
+    // 故循环吸收而非只判一次——漏掉 `readonly` 会让 `$x` 被当作表达式而报 expected_variable。
     var promoted: u32 = 0;
-    switch (p.tokTag()) {
-        .kw_public => { promoted = 1; _ = p.nextToken(); },
-        .kw_protected => { promoted = 2; _ = p.nextToken(); },
-        .kw_private => { promoted = 3; _ = p.nextToken(); },
-        else => {},
-    }
     // `public final int $x` 形式的构造器属性提升为 8.5 引入
     var is_final_promoted = false;
-    if (p.tokTag() == .kw_final) {
-        is_final_promoted = true;
-        _ = p.nextToken();
+    while (true) {
+        switch (p.tokTag()) {
+            .kw_public => { promoted = 1; _ = p.nextToken(); },
+            .kw_protected => { promoted = 2; _ = p.nextToken(); },
+            .kw_private => { promoted = 3; _ = p.nextToken(); },
+            .kw_readonly => {
+                flags |= 32;
+                _ = p.nextToken();
+            },
+            .kw_final => {
+                is_final_promoted = true;
+                _ = p.nextToken();
+            },
+            else => break,
+        }
     }
     var type_opt: OptionalIndex = .none;
     if (types.isTypeStart(p)) {
@@ -417,11 +432,12 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
     const name_tok = p.nextToken();
     var def: OptionalIndex = .none;
     var hooks: SubRange = p.emptySubRange();
+    var semi: TokenIndex = name_tok;
     if (p.tokTag() == .equals) {
         _ = p.nextToken();
         const d = (try expr.parseExpr(p)) orelse return null;
         def = OptionalIndex.fromIndex(d);
-        _ = p.eatToken(.semicolon);
+        semi = (p.eatToken(.semicolon)) orelse name_tok;
     } else if (p.tokTag() == .lbrace) {
         _ = p.nextToken();
         var list = try std.ArrayList(Index).initCapacity(p.gpa, 0);
@@ -434,11 +450,11 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
             };
             try list.append(p.gpa, h);
         }
-        _ = p.eatToken(.rbrace);
+        semi = (p.eatToken(.rbrace)) orelse name_tok;
         const lr = try p.addNodeList(list.items);
         hooks = .{ .start = lr.start, .end = lr.end };
     } else {
-        _ = p.eatToken(.semicolon);
+        semi = (p.eatToken(.semicolon)) orelse name_tok;
     }
     const extra = try p.addExtra(PropertyComponents{
         .name = name_tok,
@@ -448,6 +464,7 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
         .default = def,
         .hooks = hooks,
         .attrs = attrs,
+        .semi = semi,
     });
     const node = (try p.addNode(.{
         .tag = .stmt_property,
@@ -525,12 +542,13 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
     }
     _ = p.nextToken();
     const value = (try expr.parseExpr(p)) orelse return null;
-    _ = p.eatToken(.semicolon);
+    const semi = (p.eatToken(.semicolon)) orelse name_tok;
     const extra = try p.addExtra(ClassConstComponents{
         .name = name_tok,
         .type = type_opt,
         .flags = visibility,
         .value = OptionalIndex.fromIndex(value),
+        .semi = semi,
         .attrs = attrs,
     });
     const node = (try p.addNode(.{
@@ -616,8 +634,13 @@ fn parseEnumCase(p: *Parser) ast.ParseError!?Index {
         value = OptionalIndex.fromIndex(v);
     }
     if (p.tokTag() == .comma) _ = p.nextToken();
-    _ = p.eatToken(.semicolon);
-    const extra = try p.addExtra(CaseComponents{ .name = name_tok, .value = value, .attrs = attrs });
+    const semi = (p.eatToken(.semicolon)) orelse kw;
+    const extra = try p.addExtra(CaseComponents{
+        .name = name_tok,
+        .value = value,
+        .attrs = attrs,
+        .semi = semi,
+    });
     return (try p.addNode(.{
         .tag = .stmt_case,
         .main_token = kw,
@@ -683,4 +706,248 @@ pub fn parseParamList(p: *Parser) ast.ParseError!?SubRange {
     _ = p.expectToken(.rparen);
     const lr = try p.addNodeList(params.items);
     return .{ .start = lr.start, .end = lr.end };
+}
+
+// ===========================================================================
+// 测试：声明（函数 / 类 / 接口 / trait / 枚举 / 成员 / 参数）
+// ===========================================================================
+
+test "decl :: 顶层函数 :: 参数与返回值成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php function foo($a) { return $a; }", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_function = 1, .param = 1 });
+    try std.testing.expectEqual(@as(usize, 1), tree.rootStmts().len);
+    try std.testing.expectEqual(.stmt_function, tree.nodeTag(tree.rootStmts()[0]));
+}
+
+test "decl :: 类 :: 继承与方法分别成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class Foo extends Bar {
+        \\    public function baz($x) { return $x; }
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_class = 1, .stmt_method = 1 });
+}
+
+test "decl :: 类方法 :: 与顶层函数区分（stmt_method 非 stmt_function）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C {
+        \\    public static function f(): int { return 1; }
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_method = 1, .stmt_function = 0 });
+}
+
+test "decl :: 枚举 :: backing 与 case 成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\enum Suit: string {
+        \\    case Hearts;
+        \\    case Clubs = 'c';
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_enum = 1, .stmt_case = 2 });
+}
+
+test "decl :: 接口与 trait :: 分别成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\interface Shape {
+        \\    public function area(): float;
+        \\}
+        \\trait Logger {
+        \\    public function log($m) { echo $m; }
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .stmt_interface = 1,
+        .stmt_trait = 1,
+        .stmt_method = 2,
+    });
+}
+
+test "decl :: 属性组 :: 多个属性并列" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\#[MyAttr(1), Other]
+        \\class Foo {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .attribute = 2, .attr_group = 1 });
+}
+
+test "decl :: 属性挂点 :: 函数/枚举 case/类常量" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\#[Foo] function f(int $x) {}
+        \\enum E { #[Bar] case A; }
+        \\class C { #[Baz] const FOO = 1; }
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .attr_group = 3, .attribute = 3, .param = 1 });
+}
+
+test "decl :: 属性钩子 :: get/set 各自成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class Foo {
+        \\    public string $bar {
+        \\        get => $this->bar;
+        \\        set(string $v) => $this->bar = $v;
+        \\    }
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_property = 1, .property_hook = 2 });
+}
+
+test "decl :: 属性钩子上的属性 :: 挂到钩子节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C { public string $x { #[Hook] get => $this->x; } }
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .attr_group = 1, .property_hook = 1 });
+}
+
+test "decl :: 类常量与属性 :: 类型相同的成员区分节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C {
+        \\    public const FOO = 1;
+        \\    public int $BAR = 2;
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_class_const = 1, .stmt_property = 1 });
+}
+
+test "decl :: 非对称可见性 (8.4) :: set 侧可见性被记录" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class Foo {
+        \\    public private(set) string $bar;
+        \\    public protected(set) int $baz;
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_property = 2 });
+}
+
+test "decl :: 参数 :: readonly 与提升修饰符任意顺序" {
+    // 回归：此前只判一次 `promoted` 再判一次 `final`，未消费 `readonly`，
+    // 导致 `public readonly int $x` 在 `$x` 处报 expected_variable。
+    const gpa = std.testing.allocator;
+    // `final` 提升为 8.5 引入，故含它的用例目标版本取 8.5
+    const Case = struct { src: [:0]const u8, n: usize, ver: PhpVersion = testing.v84 };
+    const cases = [_]Case{
+        .{ .src = "<?php class C { function __construct(public readonly int $x) {} }", .n = 1 },
+        .{ .src = "<?php class C { function __construct(readonly public int $x) {} }", .n = 1 },
+        .{ .src = "<?php class C { function __construct(public final int $x) {} }", .n = 1, .ver = testing.v85 },
+        .{ .src = "<?php class C { function __construct(public readonly int $x, protected string $y = 'd', private ?Foo $z = null) {} }", .n = 3 },
+    };
+
+    for (cases) |c| {
+        var tree = try ast.Ast.parse(gpa, c.src, c.ver);
+        defer tree.deinit(gpa);
+        try testing.expectNoErrors(tree);
+        try testing.expectTagCounts(tree, .{ .param = c.n });
+    }
+}
+
+test "decl :: 参数 :: 提升/默认值/可变参数" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C { function __construct(public int $x, private string $y = '') {} }
+        \\function f(...$args) {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // __construct 的 2 个提升参数 + f 的 1 个可变参数
+    try testing.expectTagCounts(tree, .{ .param = 3 });
+}
+
+test "decl :: 构造器属性提升 :: 参数同时是属性" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C { function __construct(public int $x, private string $y = '') {} }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .param = 2, .stmt_method = 1 });
+}
+
+test "decl :: 匿名类 :: 产出 stmt_class 与方法" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$x = new class { public function foo() {} };
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_new = 1,
+        .stmt_class = 1,
+        .stmt_method = 1,
+    });
+}
+
+test "decl :: 命名空间块 :: 包裹其内声明" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\namespace Ns { function f() {} }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_namespace = 1, .stmt_function = 1 });
+}
+
+test "decl :: 全局命名空间块 :: 同样成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\namespace { function g() {} }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_namespace = 1 });
+}
+
+test "decl :: Deprecated 属性 :: 作为普通属性解析" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php #[Deprecated] function f() {}", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .attribute = 1 });
 }

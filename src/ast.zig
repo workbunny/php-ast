@@ -1,17 +1,26 @@
+//! AST 定义与查询入口。布局参照 `std.zig.Ast`（SoA + 索引平板）：
+//! - `nodes` 为扁平 `Node` 数组，节点间以 `Index` 互相引用而非指针；每个节点仅 3 字段。
+//! - 超过 2 个直接子节点的负载序列化进 `extra_data`（`u32` 大板），节点 `data` 仅存 `ExtraIndex`。
+//! - `tokens` 与 `nodes` 分离存储。
+//!
+//! 内存由调用方经 `parse(gpa, ...)` 提供，统一用 `deinit` 释放；位置信息不冗余存储，
+//! 行/列经 `tokenLocation` 按需从 `main_token` 派生。
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const PhpVersion = @import("version.zig").PhpVersion;
 const BASE_VERSION = @import("version.zig").BASE_VERSION;
 const Lexer = @import("lexer.zig").Lexer;
 const parser = @import("parser.zig");
+// 各 parser 子模块：取其定义的 `Components`（`extra_data` 的解码布局）。
+// 这些模块反向导入本文件，构成 Zig 允许的循环导入；此处仅引用其类型，
+// 不存在 comptime 求值环，可安全解析。
+const stmt = @import("parser_stmt.zig");
+const decl = @import("parser_decl.zig");
+const expr = @import("parser_expr.zig");
+const types = @import("parser_type.zig");
+const testing = @import("testing.zig");
 
-/// PHP 抽象语法树（AST），布局参照 `std.zig.Ast`（SoA + 索引平板）：
-/// - `nodes` 为扁平 `Node` 数组，节点间以 `Index` 互相引用而非指针；每个节点仅 3 字段。
-/// - 超过 2 个直接子节点的负载序列化进 `extra_data`（`u32` 大板），节点 `data` 仅存 `ExtraIndex`。
-/// - `tokens` 与 `nodes` 分离存储。
-///
-/// 内存由调用方经 `parse(gpa, ...)` 提供，统一用 `deinit` 释放；位置信息不冗余存储，
-/// 行/列经 `tokenLocation` 按需从 `main_token` 派生。
+/// 解析失败仅可能是内存不足；语法错误不在此列，而是收集进 `Ast.errors`。
 pub const ParseError = std.mem.Allocator.Error;
 
 /// 源码内的字节偏移。
@@ -306,6 +315,62 @@ pub fn tagVersion(tag: Node.Tag) PhpVersion {
     };
 }
 
+/// `forEachChild` 的区间型重载：把 `extra_data` 中的节点索引区间逐个子节点发出。
+fn emitRange(
+    tree: Ast,
+    range: SubRange,
+    ctx: anytype,
+    comptime onChild: fn (@TypeOf(ctx), Index) anyerror!void,
+) !void {
+    for (tree.extraDataSlice(range, Index)) |n| try onChild(ctx, n);
+}
+
+/// `forEachChild` 的可选节点重载：存在则发出，否则跳过。
+fn emitOpt(
+    opt: OptionalIndex,
+    ctx: anytype,
+    comptime onChild: fn (@TypeOf(ctx), Index) anyerror!void,
+) !void {
+    if (opt.unwrap()) |n| try onChild(ctx, n);
+}
+
+/// 沿子节点递归，把遇到的最小 token 下标写入 `first`。
+/// 每个节点自身的主 token 也参与比较——子节点的主 token 可能小于父节点
+/// （如 `expr_assign` 的主 token 是 `=`，而左值 `$a` 在它之前）。
+fn scanFirstToken(tree: Ast, node: Index, first: *TokenIndex) void {
+    const mt = tree.nodeMainToken(node);
+    if (mt < first.*) first.* = mt;
+
+    const Ctx = struct {
+        tree: Ast,
+        first: *TokenIndex,
+        fn onChild(self: @This(), child: Index) !void {
+            scanFirstToken(self.tree, child, self.first);
+        }
+    };
+    tree.forEachChild(node, Ctx{ .tree = tree, .first = first }, Ctx.onChild) catch {};
+}
+
+/// 沿子节点递归，把遇到的最大 token 下标写入 `last`（逻辑同 `scanFirstToken`）。
+/// 尾部定界符不是任何节点的子节点，故每层都要单独并入，否则含块的复合语句
+/// 会在 `}` 之前截断。
+fn scanLastToken(tree: Ast, node: Index, last: *TokenIndex) void {
+    const mt = tree.nodeMainToken(node);
+    if (mt > last.*) last.* = mt;
+    if (tree.trailingDelimiter(node)) |t| {
+        if (t > last.*) last.* = t;
+    }
+
+    const Ctx = struct {
+        tree: Ast,
+        last: *TokenIndex,
+        fn onChild(self: @This(), child: Index) !void {
+            scanLastToken(self.tree, child, self.last);
+        }
+    };
+    tree.forEachChild(node, Ctx{ .tree = tree, .last = last }, Ctx.onChild) catch {};
+}
+
 /// 解析结果：一棵完整的 PHP AST，持有 `tokens`/`nodes`/`extra_data`/`errors`，
 /// 以及 `version` 与根节点 `root`。用毕调用 `deinit(gpa)` 释放。
 pub const Ast = struct {
@@ -402,25 +467,430 @@ pub const Ast = struct {
         return tree.extraDataSlice(range, Index);
     }
 
-    /// 取某节点覆盖的首个 token 下标。`root` 递归到首条语句；其余节点即其 `main_token`，
-    /// 故节点无需冗余存储首尾偏移。
+    /// 遍历 `node` 的全部直接子节点，逐个交给 `onChild(ctx, child)`。
+    ///
+    /// 这是「某节点的直接子引用有哪些」的唯一事实来源：`walk`、`firstToken`、
+    /// `lastToken` 均构建于其上。采用访问者而非返回切片，是为了**零分配**——
+    /// 子节点最多数十个，走栈即可，无需为此申请内存。
+    ///
+    /// 叶子（字面量、名字、伪类型等仅含主 token 的节点）不产生任何子节点。
+    pub fn forEachChild(
+        tree: Ast,
+        node: Index,
+        ctx: anytype,
+        comptime onChild: fn (@TypeOf(ctx), Index) anyerror!void,
+    ) !void {
+        const data = tree.nodeData(node);
+        switch (tree.nodeTag(node)) {
+            // 区间型子节点（列表 / 多表达式节点）
+            .root,
+            .expr_array,
+            .expr_isset,
+            .expr_empty,
+            .expr_list,
+            .expr_encapsed,
+            .attr_group,
+            => try emitRange(tree, data.extra_range, ctx, onChild),
+
+            // 单一可选子表达式
+            .expr_exit => try emitOpt(data.opt_node, ctx, onChild),
+            .stmt_return, .stmt_break, .stmt_continue => try emitOpt(data.opt_node_and_token[0], ctx, onChild),
+
+            // 语句块：定界符存于 Components，仅语句列表为子节点
+            .stmt_block => {
+                const c = tree.extraData(data.extra, stmt.BlockComponents);
+                try emitRange(tree, c.stmts, ctx, onChild);
+            },
+
+            // 单子表达式（operand 承载在 data.node）
+            .expr_const_fetch,
+            .expr_unary,
+            .expr_eval,
+            .expr_include,
+            .expr_throw,
+            .expr_print,
+            .expr_error_suppress,
+            .expr_post_inc,
+            .expr_post_dec,
+            .expr_cast,
+            .expr_first_class_callable,
+            .expr_yield_from,
+            .type_name,
+            .type_nullable,
+            .type_array_of,
+            => try onChild(ctx, data.node),
+
+            // 控制流：拆分 Components 取子
+            .stmt_if => {
+                const c = tree.extraData(data.extra_and_opt_node[0], stmt.IfComponents);
+                try onChild(ctx, c.cond);
+                try onChild(ctx, c.then_body);
+                try emitOpt(c.else_body, ctx, onChild);
+            },
+            .stmt_while => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.WhileComponents);
+                try onChild(ctx, c.cond);
+                try onChild(ctx, c.body);
+            },
+            .stmt_for => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.ForComponents);
+                try emitOpt(c.init, ctx, onChild);
+                try emitOpt(c.cond, ctx, onChild);
+                try emitOpt(c.inc, ctx, onChild);
+                try onChild(ctx, c.body);
+            },
+            .stmt_foreach => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.ForeachComponents);
+                try onChild(ctx, c.expr);
+                try emitOpt(c.key, ctx, onChild);
+                try onChild(ctx, c.value);
+                try onChild(ctx, c.body);
+            },
+            .stmt_namespace => {
+                const c = tree.extraData(data.extra_and_opt_node[0], stmt.NamespaceComponents);
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild);
+                try emitRange(tree, c.stmts, ctx, onChild);
+            },
+
+            // 声明
+            .stmt_function => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.FunctionComponents);
+                try emitRange(tree, c.attrs, ctx, onChild);
+                try emitRange(tree, c.params, ctx, onChild);
+                try emitOpt(c.ret, ctx, onChild);
+                try emitOpt(c.body, ctx, onChild);
+            },
+            .stmt_method => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.MethodComponents);
+                try emitRange(tree, c.attrs, ctx, onChild);
+                try emitRange(tree, c.params, ctx, onChild);
+                try emitOpt(c.ret, ctx, onChild);
+                try emitOpt(c.body, ctx, onChild);
+            },
+            .stmt_class => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassComponents);
+                try emitRange(tree, c.attrs, ctx, onChild);
+                try emitOpt(c.extends, ctx, onChild);
+                try emitOpt(c.implements, ctx, onChild);
+                try emitRange(tree, c.stmts, ctx, onChild);
+            },
+            .stmt_interface, .stmt_trait, .stmt_enum => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents);
+                try emitRange(tree, c.attrs, ctx, onChild);
+                try emitOpt(c.backing, ctx, onChild);
+                try emitRange(tree, c.stmts, ctx, onChild);
+            },
+            .stmt_property => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents);
+                try emitOpt(c.type, ctx, onChild);
+                try emitOpt(c.default, ctx, onChild);
+                try emitRange(tree, c.hooks, ctx, onChild);
+                try emitRange(tree, c.attrs, ctx, onChild);
+            },
+            .stmt_case => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents);
+                try emitOpt(c.value, ctx, onChild);
+                try emitRange(tree, c.attrs, ctx, onChild);
+            },
+            .stmt_class_const => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents);
+                try emitOpt(c.type, ctx, onChild);
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild);
+                try emitRange(tree, c.attrs, ctx, onChild);
+            },
+
+            // 语句
+            .stmt_do => {
+                const c = tree.extraData(data.extra, stmt.DoComponents);
+                try onChild(ctx, c.body);
+                try onChild(ctx, c.cond);
+            },
+            .stmt_switch => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.SwitchComponents);
+                try onChild(ctx, data.extra_and_node[1]); // cond
+                try emitRange(tree, c.cases, ctx, onChild);
+            },
+            .stmt_switch_case => {
+                const c = tree.extraData(data.extra_and_opt_node[0], stmt.CaseStmtComponents);
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild); // value
+                try emitRange(tree, c.stmts, ctx, onChild);
+            },
+            .stmt_default => try emitRange(tree, data.extra_range, ctx, onChild),
+            .stmt_expression, .stmt_throw => try onChild(ctx, data.node_and_token[0]),
+            // 列表型语句：列表经 Components 承载（尾部分号亦在其中）
+            .stmt_echo => try emitRange(tree, tree.extraData(data.extra, stmt.EchoComponents).exprs, ctx, onChild),
+            .stmt_const => try emitRange(tree, tree.extraData(data.extra, stmt.ConstComponents).decls, ctx, onChild),
+            .stmt_global => try emitRange(tree, tree.extraData(data.extra, stmt.GlobalComponents).vars, ctx, onChild),
+            .stmt_static => try emitRange(tree, tree.extraData(data.extra, stmt.StaticComponents).vars, ctx, onChild),
+            .stmt_unset => try emitRange(tree, tree.extraData(data.extra, stmt.UnsetComponents).vars, ctx, onChild),
+            .stmt_try => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.TryComponents);
+                try onChild(ctx, data.extra_and_node[1]); // body
+                try emitRange(tree, c.catches, ctx, onChild);
+                try emitOpt(c.finally, ctx, onChild);
+            },
+            .stmt_catch => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.CatchComponents);
+                try emitRange(tree, c.types, ctx, onChild);
+                try onChild(ctx, data.extra_and_node[1]); // body
+            },
+            .const_decl => try onChild(ctx, data.node_and_token[0]), // value
+            .stmt_use => {
+                const c = tree.extraData(data.extra, stmt.UseComponents);
+                try emitRange(tree, c.uses, ctx, onChild);
+            },
+            .use_use => try onChild(ctx, data.extra_and_node[1]), // name
+            .stmt_group_use => {
+                const c = tree.extraData(data.extra_and_node[0], stmt.GroupUseComponents);
+                try onChild(ctx, data.extra_and_node[1]); // prefix
+                try emitRange(tree, c.uses, ctx, onChild);
+            },
+            .stmt_trait_use => {
+                const c = tree.extraData(data.extra, stmt.TraitUseComponents);
+                try emitRange(tree, c.traits, ctx, onChild);
+                try emitRange(tree, c.adaptations, ctx, onChild);
+            },
+            .trait_use_adaptation_alias, .trait_use_adaptation_precedence => {
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild);
+            },
+            .stmt_declare => {
+                const c = tree.extraData(data.extra_and_opt_node[0], stmt.DeclareComponents);
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild); // stmts
+                try emitRange(tree, c.declares, ctx, onChild);
+            },
+            .declare_declare => try onChild(ctx, data.node_and_token[0]), // value
+            .stmt_goto, .stmt_label, .stmt_halt, .inline_html, .stmt_nop, .stmt_error => {},
+            .static_var => try emitOpt(tree.extraData(data.extra, stmt.StaticVarComponents).default, ctx, onChild),
+            .property_hook => {
+                const c = tree.extraData(data.extra_and_node[0], decl.PropertyHookComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, c.params, ctx, onChild);
+                try emitRange(tree, c.attrs, ctx, onChild);
+            },
+
+            // 类型
+            .type_union, .type_intersection => {
+                try onChild(ctx, data.node_and_node[0]);
+                try onChild(ctx, data.node_and_node[1]);
+            },
+            .type_generic => {
+                const g = tree.extraData(data.extra_and_node[0], types.GenericTypeComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, g.args, ctx, onChild);
+            },
+            .type_self, .type_parent, .type_static => {},
+
+            // 名字（叶子）
+            .name, .name_fully_qualified, .name_relative, .name_var_like => {},
+
+            // 参数
+            .param => {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.ParamComponents);
+                try emitOpt(c.type, ctx, onChild);
+                try emitOpt(c.default, ctx, onChild);
+                try emitRange(tree, c.attrs, ctx, onChild);
+            },
+
+            // 属性
+            .attribute => {
+                const c = tree.extraData(data.extra_and_node[0], decl.AttributeComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, c.args, ctx, onChild);
+            },
+
+            // 一元 / 字面量叶子
+            .expr_variable,
+            .expr_int,
+            .expr_float,
+            .expr_string,
+            .expr_string_part,
+            .expr_magic_const,
+            .expr_shell_exec,
+            => {},
+
+            // 调用类（callee + 参数列表）
+            .expr_func_call,
+            .expr_method_call,
+            .expr_nullsafe_method_call,
+            => {
+                try onChild(ctx, data.node_and_range.node);
+                try emitRange(tree, data.node_and_range.range, ctx, onChild);
+            },
+            .expr_static_call => {
+                const c = tree.extraData(data.node_and_extra[1], expr.StaticCallComponents);
+                try onChild(ctx, data.node_and_extra[0]);
+                try emitRange(tree, c.args, ctx, onChild);
+            },
+            .expr_new => {
+                const c = tree.extraData(data.extra_and_node[0], expr.NewComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, c.args, ctx, onChild);
+            },
+
+            // 数组 / 列表 / 项 / 实参
+            .expr_argument => try onChild(ctx, data.node_and_extra[0]),
+            .expr_array_item => {
+                const c = tree.extraData(data.node_and_extra[1], expr.ArrayItemComponents);
+                try onChild(ctx, data.node_and_extra[0]);
+                try emitOpt(c.key, ctx, onChild);
+            },
+            .expr_clone => {
+                try onChild(ctx, data.node_and_opt_node[0]);
+                try emitOpt(data.node_and_opt_node[1], ctx, onChild);
+            },
+
+            // 双目 / 赋值 / 访问类（node_and_node）
+            .expr_binary,
+            .expr_pipe,
+            .expr_assign,
+            .expr_assign_op,
+            .expr_assign_ref,
+            .expr_property_fetch,
+            .expr_static_property_fetch,
+            .expr_nullsafe_property_fetch,
+            .expr_class_const_fetch,
+            .expr_instanceof,
+            => {
+                try onChild(ctx, data.node_and_node[0]);
+                try onChild(ctx, data.node_and_node[1]);
+            },
+            .expr_array_dim_fetch => {
+                try onChild(ctx, data.node_and_opt_node[0]);
+                try emitOpt(data.node_and_opt_node[1], ctx, onChild);
+            },
+
+            // match
+            .expr_match => {
+                const c = tree.extraData(data.extra_and_node[0], expr.MatchComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, c.arms, ctx, onChild);
+            },
+            .expr_match_arm => {
+                const c = tree.extraData(data.extra_and_node[0], expr.MatchArmComponents);
+                try onChild(ctx, data.extra_and_node[1]);
+                try emitRange(tree, c.exprs, ctx, onChild);
+            },
+            .expr_ternary => {
+                const c = tree.extraData(data.node_and_extra[1], expr.TernaryComponents);
+                try onChild(ctx, data.node_and_extra[0]);
+                try emitOpt(c.then, ctx, onChild);
+                try onChild(ctx, c.else_b);
+            },
+
+            // yield / 闭包
+            .expr_yield => {
+                const c = tree.extraData(data.extra, expr.YieldComponents);
+                try emitOpt(c.key, ctx, onChild);
+                try emitOpt(c.value, ctx, onChild);
+            },
+            .expr_closure => {
+                const c = tree.extraData(data.extra, expr.ClosureComponents);
+                try emitRange(tree, c.params, ctx, onChild);
+                try emitOpt(c.ret, ctx, onChild);
+                try onChild(ctx, c.body);
+            },
+            .expr_arrow_function => {
+                const c = tree.extraData(data.extra, expr.ArrowFunctionComponents);
+                try emitRange(tree, c.params, ctx, onChild);
+                try emitOpt(c.ret, ctx, onChild);
+                try onChild(ctx, c.body);
+            },
+        }
+    }
+
+    /// 取某节点覆盖的首个 token 下标（含其全部后代）。
+    ///
+    /// `main_token` 只是节点的**代表性** token（如二元运算的运算符），并非起始位置；
+    /// 本函数沿子节点递归取最小值，得到真正的区间左端。
     pub fn firstToken(tree: Ast, node: Index) TokenIndex {
         if (tree.nodeTag(node) == .root) {
             const s = tree.rootStmts();
             if (s.len == 0) return 0;
             return tree.firstToken(s[0]);
         }
-        return tree.nodeMainToken(node);
+        var first = tree.nodeMainToken(node);
+        scanFirstToken(tree, node, &first);
+        return first;
     }
 
-    /// 取某节点覆盖的末个 token 下标（逻辑同 `firstToken`）。
+    /// 取某节点覆盖的末个 token 下标（含其全部后代），逻辑同 `firstToken`。
+    ///
+    /// 二者合用即得节点的完整源码区间 `[firstToken, lastToken]`，可用于区间高亮、
+    /// 代码改写等场景。
     pub fn lastToken(tree: Ast, node: Index) TokenIndex {
         if (tree.nodeTag(node) == .root) {
             const s = tree.rootStmts();
             if (s.len == 0) return 0;
             return tree.lastToken(s[s.len - 1]);
         }
-        return tree.nodeMainToken(node);
+        var last = tree.nodeMainToken(node);
+        scanLastToken(tree, node, &last);
+        return last;
+    }
+
+    /// 取节点的**名字 token**（函数名、类名、常量名、属性名、case 名等），无则 `null`。
+    ///
+    /// 名字是 token 而非子节点，故不出现在 `forEachChild` 里；但它是节点的核心信息，
+    /// 检索与断点定位都需要。声明类节点的 `main_token` 往往是关键字（`function`、
+    /// `class`），只靠它取不到名字。
+    pub fn nameToken(tree: Ast, node: Index) ?TokenIndex {
+        const data = tree.nodeData(node);
+        return switch (tree.nodeTag(node)) {
+            .stmt_function => tree.extraData(data.extra_and_opt_node[0], decl.FunctionComponents).name,
+            .stmt_method => tree.extraData(data.extra_and_opt_node[0], decl.MethodComponents).name,
+            .stmt_class => tree.extraData(data.extra_and_opt_node[0], decl.ClassComponents).name,
+            .stmt_interface,
+            .stmt_trait,
+            .stmt_enum,
+            => tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents).name,
+            .stmt_property => tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents).name,
+            .stmt_class_const => tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents).name,
+            .stmt_case => tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents).name,
+            .const_decl, .declare_declare => data.node_and_token[1],
+            .static_var => tree.extraData(data.extra, stmt.StaticVarComponents).name,
+            .trait_use_adaptation_alias => tree.extraData(data.extra_and_opt_node[0], stmt.TraitAdaptAliasComponents).method,
+            .trait_use_adaptation_precedence => tree.extraData(data.extra_and_opt_node[0], stmt.TraitAdaptPrecComponents).method,
+            .param => tree.extraData(data.extra_and_opt_node[0], decl.ParamComponents).name,
+            else => null,
+        };
+    }
+
+    /// 取节点的尾部定界符 token（分号、右花括号等），无则 `null`。
+    ///
+    /// 定界符不是任何节点的子节点，故不计入 `forEachChild`；但要让 `lastToken`
+    /// 覆盖完整源码区间就必须单独取回。未列出者（叶子表达式、`switch` 的
+    /// `case`/`default` 等以冒号收尾的构造）返回 `null`。
+    pub fn trailingDelimiter(tree: Ast, node: Index) ?TokenIndex {
+        const data = tree.nodeData(node);
+        return switch (tree.nodeTag(node)) {
+            // 定界符记在 Components 内
+            .stmt_block => tree.extraData(data.extra, stmt.BlockComponents).rbrace,
+            .stmt_do => tree.extraData(data.extra, stmt.DoComponents).semi,
+            .stmt_use => tree.extraData(data.extra, stmt.UseComponents).semi,
+            .stmt_group_use => tree.extraData(data.extra_and_node[0], stmt.GroupUseComponents).semi,
+            .stmt_trait_use => tree.extraData(data.extra, stmt.TraitUseComponents).semi,
+            .stmt_declare => tree.extraData(data.extra_and_opt_node[0], stmt.DeclareComponents).semi,
+            .stmt_namespace => tree.extraData(data.extra_and_opt_node[0], stmt.NamespaceComponents).close,
+            .stmt_echo => tree.extraData(data.extra, stmt.EchoComponents).semi,
+            .stmt_const => tree.extraData(data.extra, stmt.ConstComponents).semi,
+            .stmt_global => tree.extraData(data.extra, stmt.GlobalComponents).semi,
+            .stmt_static => tree.extraData(data.extra, stmt.StaticComponents).semi,
+            .stmt_unset => tree.extraData(data.extra, stmt.UnsetComponents).semi,
+            .stmt_property => tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents).semi,
+            .stmt_class_const => tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents).semi,
+            .stmt_case => tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents).semi,
+
+            // 限定名的 `data.token` 是末段（如 `Foo\Bar` 的 `Bar`），必须计入区间，
+            // 否则名字只覆盖到首段，下游按区间取名字文本会得到 `Foo`。
+            .name, .name_fully_qualified, .name_relative, .name_var_like => data.token,
+
+            // 定界符记在 data 的 token 槽位
+            .stmt_expression, .stmt_throw, .const_decl, .declare_declare => data.node_and_token[1],
+            .stmt_return, .stmt_break, .stmt_continue => data.opt_node_and_token[1],
+            .stmt_goto, .stmt_halt => data.token_and_token[1],
+
+            else => null,
+        };
     }
 
     /// 计算某 token 在源码中的行列位置。从 `start_offset` 起扫描换行定位所在行，
@@ -575,6 +1045,386 @@ fn parseTokens(
         .version = version,
         .root = root,
     };
+}
+
+// ===========================================================================
+// 测试：AST 入口、版本门控与源码溯源
+// ===========================================================================
+
+test "ast :: root 与语句列表 :: 顶层语句按顺序挂到 root" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php $a = 1; $b = 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    try std.testing.expectEqual(.root, tree.nodeTag(tree.root));
+    try std.testing.expectEqual(@as(usize, 2), tree.rootStmts().len);
+}
+
+test "ast :: node_versions :: 与 nodes 等长" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php enum E { case A; }", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try std.testing.expectEqual(tree.nodes.len, tree.node_versions.len);
+}
+
+test "ast :: nodeVersion :: 标记节点引入版本" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa,
+        \\<?php
+        \\enum E { case A; }
+        \\$x = new Foo;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    for (tree.nodes.items(.tag), 0..) |tag, i| {
+        const v = tree.node_versions[i];
+        if (tag == .stmt_enum or tag == .stmt_case) {
+            try std.testing.expectEqual(@as(u32, 80100), v.id); // enum/case 为 8.1
+        }
+        if (tag == .expr_new) {
+            try std.testing.expectEqual(@as(u32, 80400), v.id); // 无括号 new 为 8.4
+        }
+    }
+}
+
+test "ast :: 版本门控 :: 目标低于引入版本时上报" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php enum E { case A; }", testing.v80);
+    defer tree.deinit(gpa);
+
+    var gate: usize = 0;
+    var buf: [128]u8 = undefined;
+    for (tree.errors) |e| {
+        if (e.tag == .unsupported_version) {
+            gate += 1;
+            try std.testing.expectEqual(@as(u32, 80100), e.required.id);
+            const msg = e.format(&tree, &buf);
+            try std.testing.expect(std.mem.indexOf(u8, msg, "8.1") != null);
+            try std.testing.expect(std.mem.indexOf(u8, msg, "8.0") != null);
+        }
+    }
+    // stmt_enum 与 stmt_case 均为 8.1 引入
+    try std.testing.expectEqual(@as(usize, 2), gate);
+}
+
+test "ast :: 版本门控 :: 目标不低于引入版本时静默" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php enum E { case A; }", testing.v84);
+    defer tree.deinit(gpa);
+    for (tree.errors) |e| try std.testing.expect(e.tag != .unsupported_version);
+}
+
+test "ast :: 非版本错误 :: required 恒为 BASE_VERSION" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php $a = ;", testing.v84);
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len > 0);
+    for (tree.errors) |e| {
+        if (e.tag != .unsupported_version) {
+            try std.testing.expectEqual(@as(u32, 0), e.required.id);
+        }
+    }
+}
+
+test "ast :: 8.5 语法 :: 表驱动验证版本门控" {
+    const gpa = std.testing.allocator;
+    const Case = struct { src: [:0]const u8, n: usize };
+    const cases = [_]Case{
+        .{ .src = "<?php $x |> strlen;", .n = 1 },
+        .{ .src = "<?php (void) foo();", .n = 1 },
+        .{ .src = "<?php clone($o, withProperties: ['a' => 1]);", .n = 1 },
+        .{ .src = "<?php class C { #[A] const X = 1; }", .n = 1 },
+        .{ .src = "<?php #[A] const X = 1;", .n = 1 },
+        .{ .src = "<?php class C { public protected(set) static int $x; }", .n = 1 },
+        .{ .src = "<?php class C { public function __construct(public final int $x) {} }", .n = 1 },
+    };
+
+    for (cases) |c| {
+        // 目标 8.4 低于 8.5：应报 required=8.5 的门控错误
+        var low = try Ast.parse(gpa, c.src, testing.v84);
+        defer low.deinit(gpa);
+        var gate: usize = 0;
+        for (low.errors) |e| {
+            if (e.tag == .unsupported_version and e.required.id == 80500) gate += 1;
+        }
+        try std.testing.expectEqual(c.n, gate);
+
+        // 目标 8.5：不应再报版本错误
+        var ok = try Ast.parse(gpa, c.src, testing.v85);
+        defer ok.deinit(gpa);
+        for (ok.errors) |e| try std.testing.expect(e.tag != .unsupported_version);
+    }
+}
+
+test "ast :: tokenSlice :: 节点主 token 可回切源码原文" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php $answer = 42;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const lit = testing.firstNode(tree,.expr_int) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("42", tree.tokenSlice(tree.nodeMainToken(lit)));
+}
+
+test "ast :: firstToken/lastToken :: 覆盖节点的完整 token 区间" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php $a = 1 + 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    // 二元表达式应覆盖 `1 + 2` 三个 token，而非仅主 token（运算符 `+`）
+    const bin = testing.firstNode(tree, .expr_binary) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("1", tree.tokenSlice(tree.firstToken(bin)));
+    try std.testing.expectEqualStrings("2", tree.tokenSlice(tree.lastToken(bin)));
+
+    // 赋值表达式覆盖 `$a = 1 + 2` 五个 token
+    const asg = testing.firstNode(tree, .expr_assign) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("$a", tree.tokenSlice(tree.firstToken(asg)));
+    try std.testing.expectEqualStrings("2", tree.tokenSlice(tree.lastToken(asg)));
+}
+
+test "ast :: firstToken/lastToken :: 复合语句含定界符" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php if ($a) { echo 1; }", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    // 整个 if 语句应覆盖到结尾的 `}`
+    const if_node = testing.firstNode(tree, .stmt_if) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("if", tree.tokenSlice(tree.firstToken(if_node)));
+    try std.testing.expectEqualStrings("}", tree.tokenSlice(tree.lastToken(if_node)));
+}
+
+test "ast :: 限定名 :: 区间覆盖全部分段" {
+    // 分段名存于 `data.token`（末段），若 lastToken 忽略它，区间会停在首段，
+    // 下游按区间取名字文本将得到 `Foo` 而非 `Foo\Bar`。
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php use Foo\\Bar;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const n = testing.firstNode(tree, .name) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Foo", tree.tokenSlice(tree.firstToken(n)));
+    try std.testing.expectEqualStrings("Bar", tree.tokenSlice(tree.lastToken(n)));
+}
+
+test "ast :: nameToken :: 取回声明的名字而非关键字" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa,
+        \\<?php
+        \\function foo() {}
+        \\class Bar { public int $prop; const C = 1; public function m() {} }
+        \\enum Suit: string { case Hearts; }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    // main_token 是关键字（function/class/enum），名字只能经 nameToken 取得
+    const fn_node = testing.firstNode(tree, .stmt_function) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("function", tree.tokenSlice(tree.nodeMainToken(fn_node)));
+    try std.testing.expectEqualStrings("foo", tree.tokenSlice(tree.nameToken(fn_node).?));
+
+    const m = testing.firstNode(tree, .stmt_method) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("m", tree.tokenSlice(tree.nameToken(m).?));
+
+    // 属性名的 token 含 `$` 前缀，与 PHP 源码一致
+    const p = testing.firstNode(tree, .stmt_property) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("$prop", tree.tokenSlice(tree.nameToken(p).?));
+
+    const c = testing.firstNode(tree, .stmt_class_const) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("C", tree.tokenSlice(tree.nameToken(c).?));
+
+    const e = testing.firstNode(tree, .stmt_enum) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Suit", tree.tokenSlice(tree.nameToken(e).?));
+
+    const case_node = testing.firstNode(tree, .stmt_case) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Hearts", tree.tokenSlice(tree.nameToken(case_node).?));
+}
+
+test "ast :: lastToken :: 各类语句的区间含尾部分号" {
+    const gpa = std.testing.allocator;
+    // 每行均为「一个语句 + 分号」；断言该语句的 lastToken 就是分号。
+    const srcs = [_][:0]const u8{
+        "<?php $a = 1;",
+        "<?php echo 1;",
+        "<?php return 1;",
+        "<?php throw $e;",
+        "<?php const A = 1;",
+        "<?php global $a;",
+        "<?php static $a;",
+        "<?php unset($a);",
+        "<?php use A;",
+        "<?php use A\\{B};",
+        "<?php declare(strict_types=1);",
+        "<?php goto a;",
+        "<?php do {} while ($a);",
+        "<?php while ($a) { break; }",
+        "<?php while ($a) { continue; }",
+        "<?php namespace N;",
+        "<?php class C { use T; }",
+        "<?php class C { public int $x; }",
+        "<?php class C { const A = 1; }",
+        "<?php enum E { case A; }",
+    };
+
+    for (srcs) |src| {
+        var tree = try Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try testing.expectNoErrors(tree);
+
+        // 取首条顶层语句；类成员则取类体内首条
+        const stmts = tree.rootStmts();
+        if (stmts.len == 0) return error.TestUnexpectedResult;
+        var target = stmts[0];
+        // 类成员语句需下钻一层；类与枚举的负载类型不同，分别取
+        const members: []const Index = switch (tree.nodeTag(target)) {
+            .stmt_class => blk: {
+                const c = tree.extraData(tree.nodeData(target).extra_and_opt_node[0], decl.ClassComponents);
+                break :blk tree.extraDataSlice(c.stmts, Index);
+            },
+            .stmt_enum => blk: {
+                const c = tree.extraData(tree.nodeData(target).extra_and_opt_node[0], decl.TypeDeclComponents);
+                break :blk tree.extraDataSlice(c.stmts, Index);
+            },
+            else => &.{},
+        };
+        if (members.len > 0) target = members[0];
+        if (tree.nodeTag(target) == .stmt_while) {
+            // while 的 break/continue 在循环体内
+            try std.testing.expectEqualStrings(
+                "}",
+                tree.tokenSlice(tree.lastToken(target)),
+            );
+            continue;
+        }
+
+        const last = tree.tokenSlice(tree.lastToken(target));
+        if (!std.mem.eql(u8, ";", last)) {
+            std.debug.print("\n语句区间不含分号: {s}\n  实际末 token = `{s}`\n", .{ src, last });
+            try std.testing.expect(false);
+        }
+    }
+}
+
+test "ast :: lastToken :: 块形式命名空间与 declare 以 } 结尾" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa,
+        \\<?php
+        \\namespace N { function f() {} }
+        \\declare(strict_types=1) { $a = 1; }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    for (tree.rootStmts()) |s| {
+        try std.testing.expectEqualStrings("}", tree.tokenSlice(tree.lastToken(s)));
+    }
+}
+
+test "ast :: forEachChild :: 各节点均能无异常枚举子节点" {
+    // data 是 untagged union，读写两侧若用了不同变体会触发安全检查报错甚至越界。
+    // 覆盖矩阵已保证每个 tag 都有用例，这里对全树逐节点枚举一次即可暴露不一致。
+    const gpa = std.testing.allocator;
+    const srcs = [_][:0]const u8{
+        "<?php $a = 1 + 2;",
+        "<?php if ($a) { echo 1; } else { echo 2; }",
+        "<?php while ($a) { break; }",
+        "<?php for ($i = 0; $i < 3; $i++) {}",
+        "<?php foreach ($a as $k => $v) {}",
+        "<?php do {} while ($a);",
+        "<?php switch ($a) { case 1: break; default: }",
+        "<?php try {} catch (E $e) {} finally {}",
+        "<?php function f(int $x): int { return $x; }",
+        "<?php class C extends B implements I { public int $x; const A = 1; use T; }",
+        "<?php interface I { public function m(); }",
+        "<?php trait T { public function m() {} }",
+        "<?php enum E: string { case A = 'a'; }",
+        "<?php namespace N { function f() {} }",
+        "<?php use A\\{B, C as D};",
+        "<?php declare(strict_types=1) { $a = 1; }",
+        "<?php match ($a) { 1, 2 => 'x', default => 'y' };",
+        "<?php $f = function ($p) use ($y): int { return $p; };",
+        "<?php $g = fn ($p) => $p;",
+        "<?php #[Attr(1)] class D {}",
+        "<?php $x = new class { public $p; };",
+        "<?php $a?->b()->c[0]::$d;",
+        "<?php (int)$v . (string)$w;",
+        "<?php `ls -l`; print $a; eval('1'); exit;",
+        "<?php global $a; static $b; unset($c);",
+        "<?php goto lb; lb:",
+        "<?php __halt_compiler();",
+    };
+
+    const Ctx = struct {
+        tree: Ast,
+        n: usize = 0,
+        fn onChild(self: *@This(), child: Index) !void {
+            self.n += 1;
+            // 子节点下标必须合法
+            _ = self.tree.nodeTag(child);
+        }
+    };
+
+    for (srcs) |src| {
+        var tree = try Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        for (tree.nodes.items(.tag), 0..) |_, i| {
+            var ctx = Ctx{ .tree = tree };
+            try tree.forEachChild(@enumFromInt(i), &ctx, Ctx.onChild);
+        }
+    }
+}
+
+test "ast :: lastToken :: root 委托到首末条顶层语句" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa, "<?php $a = 1;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    try std.testing.expectEqualStrings("$a", tree.tokenSlice(tree.firstToken(tree.root)));
+    try std.testing.expectEqualStrings(";", tree.tokenSlice(tree.lastToken(tree.root)));
+}
+
+test "ast :: tokenLocation :: 计算行列位置" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa,
+        \\<?php
+        \\$a = 1;
+        \\$b = 2;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const lit = testing.firstNode(tree,.expr_int) orelse return error.TestUnexpectedResult;
+    const loc = tree.tokenLocation(0, tree.nodeMainToken(lit));
+    // 第 2 行（0 起算），即源码中的 `$a = 1;`
+    try std.testing.expectEqual(@as(usize, 1), loc.line);
+}
+
+test "ast :: docCommentBefore :: 取回声明前的 docblock" {
+    const gpa = std.testing.allocator;
+    var tree = try Ast.parse(gpa,
+        \\<?php
+        \\/** doc */
+        \\function f() {}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const fn_node = testing.firstNode(tree,.stmt_function) orelse return error.TestUnexpectedResult;
+    const doc = tree.docCommentBefore(fn_node) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(.doc_comment, tree.tokenTag(doc));
+}
+
+test "ast :: tagVersion :: 基础语法返回 BASE_VERSION" {
+    try std.testing.expectEqual(@as(u32, 0), tagVersion(.root).id);
+    try std.testing.expectEqual(@as(u32, 0), tagVersion(.expr_assign).id);
+    try std.testing.expectEqual(@as(u32, 80100), tagVersion(.stmt_enum).id);
+    try std.testing.expectEqual(@as(u32, 80400), tagVersion(.property_hook).id);
+    try std.testing.expectEqual(@as(u32, 80500), tagVersion(.expr_pipe).id);
 }
 
 

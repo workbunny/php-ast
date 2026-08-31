@@ -1,0 +1,101 @@
+(root `<?php`
+  (stmt_class `class` name=`Base`
+    (name `Iface`)
+    (stmt_class_const `const` name=`A`
+      (expr_int `1`)
+    )
+    (stmt_property `$ro`
+      (type_name `string`
+        (name `string`)
+      )
+    )
+    (stmt_property `$counter`
+      (type_nullable `?`
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (expr_const_fetch `null`
+        (name `null`)
+      )
+    )
+    (stmt_property `$list`
+      (type_name `array`
+        (name `array`)
+      )
+      (expr_array `[`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+        (expr_array_item `2`
+          (expr_int `2`)
+        )
+        (expr_array_item `3`
+          (expr_int `3`)
+        )
+      )
+    )
+    (stmt_method `function` name=`__construct`
+      (param `$x`
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (param `$y`
+        (type_name `string`
+          (name `string`)
+        )
+        (expr_string `'default'`)
+      )
+      (param `$z`
+        (type_nullable `?`
+          (type_name `Foo`
+            (name `Foo`)
+          )
+        )
+        (expr_const_fetch `null`
+          (name `null`)
+        )
+      )
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`mustImplement`
+      (type_name `void`
+        (name `void`)
+      )
+    )
+    (stmt_method `function` name=`create`
+      (type_static `static`)
+      (stmt_block `{`
+        (stmt_return `return`
+          (expr_new `new`
+            (name `static`)
+          )
+        )
+      )
+    )
+    (stmt_method `function` name=`__get`
+      (param `$name`
+        (type_name `string`
+          (name `string`)
+        )
+      )
+      (type_name `mixed`
+        (name `mixed`)
+      )
+      (stmt_block `{`
+        (stmt_return `return`
+          (expr_binary `??`
+            (expr_property_fetch `$this`
+              (expr_variable `$this`)
+              (name_var_like `$name`)
+            )
+            (expr_const_fetch `null`
+              (name `null`)
+            )
+          )
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,51 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$s1`)
+      (expr_string `'single'`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$s2`)
+      (expr_encapsed `"`
+        (expr_string_part `double `)
+        (expr_variable `$v`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$s3`)
+      (expr_encapsed `"`
+        (expr_property_fetch `$obj`
+          (expr_variable `$obj`)
+          (name `prop`)
+        )
+        (expr_string_part ` and `)
+        (expr_array_dim_fetch `$arr`
+          (expr_variable `$arr`)
+          (expr_string `'k'`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$s4`)
+      (expr_encapsed `<<<`
+        (expr_string_part `heredoc `)
+        (expr_variable `$v`)
+        (expr_string_part ` text\n`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$s5`)
+      (expr_encapsed `<<<`
+        (expr_string_part `nowdoc $v text\n`)
+      )
+    )
+  )
+)

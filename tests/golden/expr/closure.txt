@@ -1,0 +1,93 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$fn`)
+      (expr_arrow_function `fn`
+        (param `$p`)
+        (expr_binary `+`
+          (expr_variable `$p`)
+          (expr_int `1`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$closure`)
+      (expr_closure `function`
+        (param `$p`)
+        (type_name `int`
+          (name `int`)
+        )
+        (stmt_block `{`
+          (stmt_return `return`
+            (expr_variable `$p`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$static`)
+      (expr_closure `function`
+        (stmt_block `{`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$byRef`)
+      (expr_closure `function`
+        (param `$p`)
+        (stmt_block `{`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$variadic`)
+      (expr_closure `function`
+        (param `$args`)
+        (stmt_block `{`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$nullable`)
+      (expr_closure `function`
+        (type_nullable `?`
+          (type_name `int`
+            (name `int`)
+          )
+        )
+        (stmt_block `{`
+          (stmt_return `return`
+            (expr_const_fetch `null`
+              (name `null`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$arrowTyped`)
+      (expr_arrow_function `fn`
+        (param `$x`
+          (type_name `int`
+            (name `int`)
+          )
+        )
+        (type_name `string`
+          (name `string`)
+        )
+        (expr_cast `string`
+          (expr_variable `$x`)
+        )
+      )
+    )
+  )
+)

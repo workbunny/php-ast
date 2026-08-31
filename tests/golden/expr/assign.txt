@@ -1,0 +1,38 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$b`)
+      (expr_binary `+`
+        (expr_int `1`)
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$c`)
+      (expr_binary `??`
+        (expr_variable `$d`)
+        (expr_variable `$e`)
+      )
+    )
+  )
+  (stmt_expression `+=`
+    (expr_assign_op `+=`
+      (expr_variable `$f`)
+      (expr_int `3`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign_ref `=`
+      (expr_variable `$g`)
+      (expr_variable `$h`)
+    )
+  )
+)

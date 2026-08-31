@@ -1,0 +1,89 @@
+(root `<?php`
+  (stmt_function `function` name=`f`
+    (param `$u`
+      (type_union `|`
+        (type_name `int`
+          (name `int`)
+        )
+        (type_name `string`
+          (name `string`)
+        )
+      )
+    )
+    (param `$n`
+      (type_nullable `?`
+        (type_name `Foo`
+          (name `Foo\Bar`)
+        )
+      )
+    )
+    (param `$i`
+      (type_intersection `&`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+    )
+    (param `$dnf`
+      (type_array_of `[`
+        (type_intersection `&`
+          (type_name `Countable`
+            (name `Countable`)
+          )
+          (type_name `ArrayAccess`
+            (name `ArrayAccess`)
+          )
+        )
+      )
+    )
+    (param `$g`
+      (type_generic `list`
+        (type_name `list`
+          (name `list`)
+        )
+        (type_name `int`
+          (name `int`)
+        )
+      )
+    )
+    (param `$s`
+      (type_self `self`)
+    )
+    (param `$st`
+      (type_static `static`)
+    )
+    (param `$c`
+      (type_name `callable`
+        (name `callable`)
+      )
+    )
+    (param `$m`
+      (type_name `mixed`
+        (name `mixed`)
+      )
+    )
+    (type_union `|`
+      (type_intersection `&`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+      (type_name `null`
+        (name `null`)
+      )
+    )
+    (stmt_block `{`
+      (stmt_return `return`
+        (expr_const_fetch `null`
+          (name `null`)
+        )
+      )
+    )
+  )
+)

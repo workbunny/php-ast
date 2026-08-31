@@ -24,158 +24,6 @@ pub const Lexer = struct {
         return c >= '0' and c <= '9';
     }
 
-    /// 把关键字文本映射到对应的 `Tag`，非关键字返回 `null`。
-    ///
-    /// 单点维护 PHP 关键字表；8.x 新增关键字在此集中添加。
-    fn keywordTag(t: []const u8) ?Token.Tag {
-        const kw = struct {
-            t: []const u8,
-            tag: Token.Tag,
-        };
-        const list = [_]kw{
-            .{ .t = "if", .tag = .kw_if },
-            .{ .t = "else", .tag = .kw_else },
-            .{ .t = "elseif", .tag = .kw_elseif },
-            .{ .t = "while", .tag = .kw_while },
-            .{ .t = "for", .tag = .kw_for },
-            .{ .t = "foreach", .tag = .kw_foreach },
-            .{ .t = "as", .tag = .kw_as },
-            .{ .t = "function", .tag = .kw_function },
-            .{ .t = "class", .tag = .kw_class },
-            .{ .t = "extends", .tag = .kw_extends },
-            .{ .t = "implements", .tag = .kw_implements },
-            .{ .t = "return", .tag = .kw_return },
-            .{ .t = "echo", .tag = .kw_echo },
-            .{ .t = "namespace", .tag = .kw_namespace },
-            .{ .t = "new", .tag = .kw_new },
-            .{ .t = "true", .tag = .kw_true },
-            .{ .t = "false", .tag = .kw_false },
-            .{ .t = "null", .tag = .kw_null },
-            .{ .t = "public", .tag = .kw_public },
-            .{ .t = "protected", .tag = .kw_protected },
-            .{ .t = "private", .tag = .kw_private },
-            .{ .t = "static", .tag = .kw_static },
-            .{ .t = "var", .tag = .kw_var },
-            .{ .t = "const", .tag = .kw_const },
-            .{ .t = "abstract", .tag = .kw_abstract },
-            .{ .t = "final", .tag = .kw_final },
-            .{ .t = "enum", .tag = .kw_enum },
-            .{ .t = "interface", .tag = .kw_interface },
-            .{ .t = "trait", .tag = .kw_trait },
-            .{ .t = "match", .tag = .kw_match },
-            .{ .t = "readonly", .tag = .kw_readonly },
-            .{ .t = "default", .tag = .kw_default },
-            .{ .t = "instanceof", .tag = .kw_instanceof },
-            .{ .t = "and", .tag = .kw_and },
-            .{ .t = "or", .tag = .kw_or },
-            .{ .t = "xor", .tag = .kw_xor },
-            .{ .t = "fn", .tag = .kw_fn },
-            .{ .t = "clone", .tag = .kw_clone },
-            .{ .t = "print", .tag = .kw_print },
-            .{ .t = "yield", .tag = .kw_yield },
-            .{ .t = "include", .tag = .kw_include },
-            .{ .t = "include_once", .tag = .kw_include_once },
-            .{ .t = "require", .tag = .kw_require },
-            .{ .t = "require_once", .tag = .kw_require_once },
-            .{ .t = "list", .tag = .kw_list },
-            .{ .t = "isset", .tag = .kw_isset },
-            .{ .t = "empty", .tag = .kw_empty },
-            .{ .t = "eval", .tag = .kw_eval },
-            .{ .t = "exit", .tag = .kw_exit },
-            .{ .t = "die", .tag = .kw_die },
-            .{ .t = "throw", .tag = .kw_throw },
-            .{ .t = "use", .tag = .kw_use },
-            .{ .t = "do", .tag = .kw_do },
-            .{ .t = "break", .tag = .kw_break },
-            .{ .t = "continue", .tag = .kw_continue },
-            .{ .t = "switch", .tag = .kw_switch },
-            .{ .t = "case", .tag = .kw_case },
-            .{ .t = "try", .tag = .kw_try },
-            .{ .t = "catch", .tag = .kw_catch },
-            .{ .t = "finally", .tag = .kw_finally },
-            .{ .t = "declare", .tag = .kw_declare },
-            .{ .t = "goto", .tag = .kw_goto },
-            .{ .t = "global", .tag = .kw_global },
-            .{ .t = "unset", .tag = .kw_unset },
-            .{ .t = "insteadof", .tag = .kw_insteadof },
-            .{ .t = "halt_compiler", .tag = .kw_halt_compiler },
-        };
-        for (list) |k| {
-            if (std.mem.eql(u8, k.t, t)) return k.tag;
-        }
-        return null;
-    }
-
-    /// 把运算符/标点文本映射到 `Tag`，无法识别返回 `null`。
-    ///
-    /// 注意多字符运算符优先于单字符（如 `==` 先于 `=`），因此先按长度从长到短尝试。
-    fn opTag(t: []const u8) ?Token.Tag {
-        const ops = [_]struct { t: []const u8, tag: Token.Tag }{
-            .{ .t = "...", .tag = .ellipsis },
-            .{ .t = "\\", .tag = .backslash },
-            .{ .t = "===", .tag = .equal_equal_equal },
-            .{ .t = "!==", .tag = .bang_equal_equal },
-            .{ .t = "**=", .tag = .double_asterisk_equal },
-            .{ .t = ">>=", .tag = .right_shift_equal },
-            .{ .t = "<<=", .tag = .left_shift_equal },
-            .{ .t = "??", .tag = .null_coalesce },
-            .{ .t = "?->", .tag = .nullsafe_arrow },
-            .{ .t = "<<", .tag = .left_shift },
-            .{ .t = ">>", .tag = .right_shift },
-            .{ .t = "^", .tag = .caret },
-            .{ .t = "^=", .tag = .caret_equal },
-            .{ .t = "==", .tag = .equal_equal },
-            .{ .t = "!=", .tag = .bang_equal },
-            .{ .t = ">=", .tag = .greater_equal },
-            .{ .t = "<=", .tag = .less_equal },
-            .{ .t = "&&", .tag = .bool_and },
-            .{ .t = "||", .tag = .bool_or },
-            .{ .t = "->", .tag = .arrow },
-            .{ .t = "::", .tag = .double_colon },
-            .{ .t = "=>", .tag = .double_arrow },
-            .{ .t = "++", .tag = .double_plus },
-            .{ .t = "--", .tag = .double_minus },
-            .{ .t = "**", .tag = .double_asterisk },
-            .{ .t = "+=", .tag = .plus_equal },
-            .{ .t = "-=", .tag = .minus_equal },
-            .{ .t = "*=", .tag = .asterisk_equal },
-            .{ .t = "/=", .tag = .slash_equal },
-            .{ .t = "%=", .tag = .percent_equal },
-            .{ .t = ".=", .tag = .dot_equal },
-            .{ .t = "&=", .tag = .ampersand_equal },
-            .{ .t = "|=", .tag = .pipe_equal },
-            .{ .t = "^=", .tag = .caret_equal },
-            .{ .t = "=", .tag = .equals },
-            .{ .t = "+", .tag = .plus },
-            .{ .t = "-", .tag = .minus },
-            .{ .t = "*", .tag = .asterisk },
-            .{ .t = "/", .tag = .slash },
-            .{ .t = "%", .tag = .percent },
-            .{ .t = ".", .tag = .dot },
-            .{ .t = "!", .tag = .bang },
-            .{ .t = "~", .tag = .tilde },
-            .{ .t = "&", .tag = .ampersand },
-            .{ .t = "|", .tag = .pipe },
-            .{ .t = "?", .tag = .question },
-            .{ .t = "<", .tag = .less_than },
-            .{ .t = ">", .tag = .greater_than },
-            .{ .t = ",", .tag = .comma },
-            .{ .t = ";", .tag = .semicolon },
-            .{ .t = ":", .tag = .colon },
-            .{ .t = "@", .tag = .at },
-            .{ .t = "(", .tag = .lparen },
-            .{ .t = ")", .tag = .rparen },
-            .{ .t = "{", .tag = .lbrace },
-            .{ .t = "}", .tag = .rbrace },
-            .{ .t = "[", .tag = .lbracket },
-            .{ .t = "]", .tag = .rbracket },
-        };
-        for (ops) |o| {
-            if (std.mem.eql(u8, o.t, t)) return o.tag;
-        }
-        return null;
-    }
-
     /// 判断标识符文本是否为 PHP 魔术常量（大小写不敏感）。
     fn isMagicConst(t: []const u8) bool {
         const names = [_][]const u8{
@@ -556,7 +404,7 @@ pub const Lexer = struct {
                 while (e < n and isIdentChar(source[e])) : (e += 1) {}
                 const text = source[i..e];
                 const tag = blk: {
-                    if (keywordTag(text)) |k| break :blk k;
+                    if (Token.keywordTag(text)) |k| break :blk k;
                     if (isMagicConst(text)) break :blk .magic_const;
                     break :blk .identifier;
                 };
@@ -571,7 +419,7 @@ pub const Lexer = struct {
                 const maxlen = if (n - i < 3) n - i else 3;
                 var len = maxlen;
                 while (len >= 1) : (len -= 1) {
-                    if (opTag(source[i .. i + len])) |tag| {
+                    if (Token.opTag(source[i .. i + len])) |tag| {
                         try out.append(gpa, .{ .tag = tag, .start = i, .end = i + len });
                         i += len - 1;
                         matched = true;
@@ -589,3 +437,121 @@ pub const Lexer = struct {
         try out.append(gpa, .{ .tag = .eof, .start = n, .end = n });
     }
 };
+
+// ===========================================================================
+// 测试：词法器
+// ===========================================================================
+
+test "lexer :: 基础 token 流 :: 按源码顺序产出并以 eof 收尾" {
+    const gpa = std.testing.allocator;
+    var toks = Token.TokenList{};
+    defer toks.deinit(gpa);
+    try Lexer.tokenize(gpa, "<?php echo \"hi\";", &toks);
+    var s = toks.toOwnedSlice();
+    defer s.deinit(gpa);
+
+    // 精确比对整条序列，而非只断言「长度够、前几个对」。
+    const want = [_]Token.Tag{
+        .open_tag, .kw_echo, .string_start, .string_part, .string_end, .semicolon, .eof,
+    };
+    try std.testing.expectEqual(want.len, s.len);
+    for (want, s.items(.tag)) |w, got| {
+        try std.testing.expectEqual(w, got);
+    }
+}
+
+test "lexer :: 数字字面量 :: 整数与浮点数区分" {
+    const gpa = std.testing.allocator;
+    var i = try tokenizeTags(gpa, "<?php 42;");
+    defer i.deinit(gpa);
+    try std.testing.expect(hasTag(i.items, .int_literal));
+
+    var f = try tokenizeTags(gpa, "<?php 1.5;");
+    defer f.deinit(gpa);
+    try std.testing.expect(hasTag(f.items, .float_literal));
+}
+
+test "lexer :: 标识符与变量 :: $ 前缀产出 variable" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "<?php $foo BAR;");
+    defer t.deinit(gpa);
+    try std.testing.expect(hasTag(t.items, .variable));
+    try std.testing.expect(hasTag(t.items, .identifier));
+}
+
+test "lexer :: 运算符 :: 算术/比较/赋值/复合赋值" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "<?php $a + - * / % . == != === <> < > <= >= << >> ** & | ^ ??;");
+    defer t.deinit(gpa);
+    for ([_]Token.Tag{
+        .plus,    .minus,        .asterisk,     .slash,     .percent, .dot,
+        .equal_equal, .bang_equal, .equal_equal_equal,
+        .less_than, .greater_than, .less_equal, .greater_equal,
+        .left_shift, .right_shift, .double_asterisk,
+        .ampersand, .pipe, .caret, .null_coalesce,
+    }) |want| {
+        if (!hasTag(t.items, want)) {
+            std.debug.print("\n词法缺失 token: {s}\n", .{@tagName(want)});
+            try std.testing.expect(false);
+        }
+    }
+}
+
+test "lexer :: 非法字符 :: 产出 invalid 且不崩溃" {
+    const gpa = std.testing.allocator;
+    // 控制字符无法归类，应记为 invalid 并继续，而非丢弃或崩溃。
+    var t = try tokenizeTags(gpa, "<?php \x01 ;");
+    defer t.deinit(gpa);
+    try std.testing.expect(hasTag(t.items, .invalid));
+}
+
+test "lexer :: 注释 :: 行注释与块注释均被切出" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa,
+        \\<?php
+        \\// line
+        \\/* block */
+        \\/** doc */
+        \\;
+    );
+    defer t.deinit(gpa);
+    try std.testing.expect(hasTag(t.items, .comment));
+    try std.testing.expect(hasTag(t.items, .doc_comment));
+}
+
+test "lexer :: eof 哨兵 :: 恒为最后一个 token" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "<?php $a;");
+    defer t.deinit(gpa);
+    try std.testing.expect(t.items.len > 0);
+    try std.testing.expectEqual(.eof, t.items[t.items.len - 1]);
+}
+
+test "lexer :: 空输入 :: 仅产出 eof" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "");
+    defer t.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), t.items.len);
+    try std.testing.expectEqual(.eof, t.items[0]);
+}
+
+// ---- 辅助 ----
+
+fn hasTag(tags: []const Token.Tag, want: Token.Tag) bool {
+    for (tags) |t| {
+        if (t == want) return true;
+    }
+    return false;
+}
+
+/// 词法化源码并只取 tag 序列，便于做「含某类 token」的集合式断言。
+fn tokenizeTags(gpa: std.mem.Allocator, src: [:0]const u8) !std.ArrayList(Token.Tag) {
+    var toks = Token.TokenList{};
+    defer toks.deinit(gpa);
+    try Lexer.tokenize(gpa, src, &toks);
+    var slice = toks.toOwnedSlice();
+    defer slice.deinit(gpa);
+    var out = try std.ArrayList(Token.Tag).initCapacity(gpa, slice.len);
+    for (slice.items(.tag)) |t| try out.append(gpa, t);
+    return out;
+}

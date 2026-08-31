@@ -6,6 +6,7 @@ const Parser = @import("parser.zig").Parser;
 const decl = @import("parser_decl.zig");
 const stmt = @import("parser_stmt.zig");
 const types = @import("parser_type.zig");
+const testing = @import("testing.zig");
 
 const Node = ast.Node;
 const Index = ast.Index;
@@ -158,7 +159,10 @@ pub fn parseBinary(p: *Parser, min_prec: u8) ast.ParseError!?Index {
             continue;
         }
 
-        // 赋值（含复合赋值、引用赋值），右结合，最高优先级组
+        // 赋值（含复合赋值、引用赋值），右结合。
+        //
+        // 优先级仅高于 `and`/`xor`/`or`：右值必须能吸收 `??` 及以上的全部运算，
+        // 否则 `$a = 1 + 2` 会被解析成 `($a = 1) + 2`，语义完全错误。
         if (isAssignmentOp(t)) {
             const op = p.nextToken();
             var tag: Node.Tag = if (t == .equals) .expr_assign else .expr_assign_op;
@@ -166,7 +170,7 @@ pub fn parseBinary(p: *Parser, min_prec: u8) ast.ParseError!?Index {
                 _ = p.nextToken();
                 tag = .expr_assign_ref;
             }
-            const rhs = (try parseBinary(p, 100)) orelse return null;
+            const rhs = (try parseBinary(p, MIN_PREC_OF_ASSIGN_RHS)) orelse return null;
             lhs = (try p.addNode(.{
                 .tag = tag,
                 .main_token = op,
@@ -230,7 +234,18 @@ pub fn parseUnary(p: *Parser) ast.ParseError!?Index {
     }
 
     switch (t) {
-        .bang, .minus, .plus, .tilde, .double_plus, .double_minus => {
+        .minus, .plus => {
+            const op = p.nextToken();
+            // `**` 优先级高于一元 `-`/`+`：`-$a ** 2` 应为 `-($a ** 2)`，
+            // 故操作数从幂运算的左优先级（见 bindingPower）开始解析。
+            const operand = (try parseBinary(p, 17)) orelse return null;
+            return (try p.addNode(.{
+                .tag = .expr_unary,
+                .main_token = op,
+                .data = .{ .node = operand },
+            })) orelse unreachable;
+        },
+        .bang, .tilde, .double_plus, .double_minus => {
             const op = p.nextToken();
             const operand = (try parseUnary(p)) orelse return null;
             return (try p.addNode(.{
@@ -295,13 +310,29 @@ pub fn parseUnary(p: *Parser) ast.ParseError!?Index {
 }
 
 pub fn parsePostfix(p: *Parser) ast.ParseError!?Index {
-    var e = (try parsePrimary(p)) orelse return null;
+    const e = (try parsePrimary(p)) orelse return null;
+    return (try parsePostfixContinue(p, e)) orelse return null;
+}
+
+/// 在已有基表达式 `base` 上继续解析后缀（`()`, `->`, `::`, `[]`, `++` 等）。
+///
+/// 从 `parsePostfix` 抽出，供需要先构造基表达式（如 `static` 作为类名）的调用方复用。
+/// 返回后缀应用完毕后的最终节点。
+fn parsePostfixContinue(p: *Parser, base: Index) ast.ParseError!?Index {
+    var e = base;
     while (true) {
         switch (p.tokTag()) {
             .lparen => {
                 const args = try parseArgs(p);
+                // `$o->m()` 的前缀已由 `.arrow` 分支产出 expr_property_fetch，此处
+                // 归约为方法调用；其余（`f()`、`$f()` 等）均为函数调用。
+                const callee_tag = p.nodes.items(.tag)[@intFromEnum(e)];
+                const tag: Node.Tag = if (callee_tag == .expr_property_fetch)
+                    .expr_method_call
+                else
+                    .expr_func_call;
                 e = (try p.addNode(.{
-                    .tag = .expr_method_call,
+                    .tag = tag,
                     .main_token = p.nodeMainToken(e),
                     .data = .{ .node_and_range = .{ .node = e, .range = .{ .start = args.start, .end = args.end } } },
                 })) orelse unreachable;
@@ -596,6 +627,19 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
         .kw_match => return parseMatch(p),
         .kw_fn => return parseArrowFunction(p),
         .kw_function => return parseClosure(p),
+        .kw_static => {
+            // `static function () {}` 静态匿名函数；否则 `static` 作为类名走后缀
+            // （`static::method()`、`static::$prop` 等）。
+            const save = p.tok_i;
+            _ = p.nextToken();
+            if (p.tokTag() == .kw_function) {
+                return parseClosure(p);
+            }
+            p.tok_i = save;
+            const t = p.nextToken();
+            const name = (try p.addNode(.{ .tag = .name, .main_token = t, .data = .{ .token = t } })) orelse unreachable;
+            return (try parsePostfixContinue(p, name)) orelse unreachable;
+        },
         .kw_include, .kw_include_once, .kw_require, .kw_require_once => {
             const kw = p.nextToken();
             const operand = (try parseUnary(p)) orelse return null;
@@ -929,6 +973,12 @@ fn isAssignmentOp(t: Token.Tag) bool {
     };
 }
 
+/// 解析赋值右值时传入的最小优先级。
+///
+/// 赋值在 PHP 中优先级仅高于 `and`/`xor`/`or`，故右值要吸收 `??`（下界 6）及
+/// 以上的全部运算。取值必须与下方 `bindingPower` 中 `.null_coalesce` 的下界一致。
+const MIN_PREC_OF_ASSIGN_RHS: u8 = 6;
+
 fn bindingPower(t: Token.Tag) [2]u8 {
     return switch (t) {
         .comma => .{ 0, 0 },
@@ -941,7 +991,7 @@ fn bindingPower(t: Token.Tag) [2]u8 {
         .pipe => .{ 8, 9 },
         .caret => .{ 9, 10 },
         .ampersand => .{ 10, 11 },
-        .equal_equal, .bang_equal, .equal_equal_equal, .bang_equal_equal => .{ 11, 12 },
+        .equal_equal, .bang_equal, .equal_equal_equal, .bang_equal_equal, .spaceship => .{ 11, 12 },
         .less_than, .greater_than, .less_equal, .greater_equal => .{ 12, 13 },
         .kw_instanceof => .{ 13, 13 },
         .left_shift, .right_shift => .{ 14, 15 },
@@ -950,4 +1000,517 @@ fn bindingPower(t: Token.Tag) [2]u8 {
         .double_asterisk => .{ 17, 18 },
         else => .{ 0, 0 },
     };
+}
+
+// ===========================================================================
+// 测试：表达式
+// ===========================================================================
+
+test "expr :: 字面量 :: int/float/string 各自成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = 1;
+        \\$b = 1.5;
+        \\$c = 'str';
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_int = 1,
+        .expr_float = 1,
+        .expr_string = 1,
+        .expr_assign = 3,
+    });
+}
+
+test "expr :: 赋值 :: 普通/复合/引用三种形式分别成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = 1;
+        \\$a += 1;
+        \\$a = &$b;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_assign = 1,
+        .expr_assign_op = 1,
+        .expr_assign_ref = 1,
+    });
+}
+
+test "expr :: 二元运算 :: 算术与比较均归为 expr_binary" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a + $b; $c < $d;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_binary = 2, .expr_variable = 4 });
+}
+
+test "expr :: 赋值优先级 :: 右值吸收算术运算" {
+    const gpa = std.testing.allocator;
+    // 赋值优先级低于 `+`：必须解析为 `$a = (1 + 2)`，
+    // 而非 `($a = 1) + 2`（后者语义完全不同）。
+    var tree = try ast.Ast.parse(gpa, "<?php $a = 1 + 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const asg = testing.firstNode(tree, .expr_assign) orelse return error.TestUnexpectedResult;
+    const bin = testing.firstNode(tree, .expr_binary) orelse return error.TestUnexpectedResult;
+    // binary 应是 assign 的右值，而非 assign 是 binary 的左值
+    const rhs = tree.nodeData(asg).node_and_node[1];
+    try std.testing.expectEqual(bin, rhs);
+    // assign 覆盖 `$a = 1 + 2`，binary 覆盖 `1 + 2`
+    try std.testing.expectEqualStrings("$a", tree.tokenSlice(tree.firstToken(asg)));
+    try std.testing.expectEqualStrings("1", tree.tokenSlice(tree.firstToken(bin)));
+}
+
+test "expr :: 赋值优先级 :: and/or 仍低于赋值" {
+    const gpa = std.testing.allocator;
+    // `$a = 1 and 2` 应解析为 `($a = 1) and 2`
+    var tree = try ast.Ast.parse(gpa, "<?php $a = 1 and 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const bin = testing.firstNode(tree, .expr_binary) orelse return error.TestUnexpectedResult;
+    const lhs = tree.nodeData(bin).node_and_node[0];
+    try std.testing.expectEqual(.expr_assign, tree.nodeTag(lhs));
+    try std.testing.expectEqualStrings("and", tree.tokenSlice(tree.nodeMainToken(bin)));
+}
+
+test "expr :: 赋值优先级 :: 右结合且右值含 null 合并" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a = $b ?? $c;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const asg = testing.firstNode(tree, .expr_assign) orelse return error.TestUnexpectedResult;
+    const rhs = tree.nodeData(asg).node_and_node[1];
+    try std.testing.expectEqual(.expr_binary, tree.nodeTag(rhs));
+}
+
+test "expr :: 一元运算 :: 负号与取反" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php -$a; !$b;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_unary = 2 });
+}
+
+test "expr :: 函数调用 :: 实参与命名实参产出 expr_argument" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php f(1); g(a: 2);", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_func_call = 2, .expr_argument = 2 });
+}
+
+test "expr :: 属性访问与方法调用 :: -> 的两种形态" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $o->p; $o->m();", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // 注意：`$o->m()` 的 callee 本身也是一次属性取回，故 expr_property_fetch 为 2
+    // （与 PHP-Parser 的 MethodCall.var 为 PropertyFetch 一致）。
+    try testing.expectTagCounts(tree, .{
+        .expr_property_fetch = 2,
+        .expr_method_call = 1,
+    });
+}
+
+test "expr :: 常量取值 :: 裸标识符产出 expr_const_fetch" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php FOO;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_const_fetch = 1, .name = 1 });
+}
+
+test "expr :: 数组字面量 :: 每项包裹为 expr_array_item" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php [1, 2, 'k' => 3];", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_array = 1, .expr_array_item = 3 });
+}
+
+test "expr :: 错误抑制 :: @ 前缀产出 expr_error_suppress" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php @f();", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_error_suppress = 1,
+        .expr_func_call = 1,
+    });
+}
+
+test "expr :: exit/die :: 两种关键字均归为 expr_exit" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php exit; die(1);", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_exit = 2 });
+}
+
+test "expr :: eval :: 产出 expr_eval" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php eval('1');", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_eval = 1 });
+}
+
+test "expr :: print :: 产出 expr_print" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php print $a;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_print = 1 });
+}
+
+test "expr :: shell_exec :: 反引号产出 expr_shell_exec" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php `ls -l`;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_shell_exec = 1 });
+}
+
+test "expr :: yield from :: 产出 expr_yield_from" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function g() { yield from $it; }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_yield_from = 1 });
+}
+
+test "expr :: 管道运算符 (8.5) :: 目标 8.5 下产出 expr_pipe" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $x |> strlen;", testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_pipe = 1 });
+}
+
+test "expr :: match :: 条件与分支臂成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\match ($x) {
+        \\    1, 2 => 'a',
+        \\    default => 'b',
+        \\};
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_match = 1, .expr_match_arm = 2 });
+}
+
+test "expr :: 一等可调用 :: strlen(...) 成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php strlen(...);", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_first_class_callable = 1 });
+}
+
+test "expr :: new :: 有括号/无括号/动态类名" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$x = new Foo;
+        \\$y = new Foo(1);
+        \\$z = new $cls;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_new = 3 });
+}
+
+test "expr :: 三元 :: 完整形式与省略形式" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $b ? $a : $c; $b ?: $c;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_ternary = 2 });
+}
+
+test "expr :: null 合并 :: ?? 归为二元运算" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a ?? $b;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_binary = 1 });
+}
+
+test "expr :: instanceof :: 产出专用节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $x instanceof Foo;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_instanceof = 1 });
+}
+
+test "expr :: 箭头函数与闭包 :: 两种匿名函数分别成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f($y) {
+        \\    $fn = fn($p) => $p + 1;
+        \\    $cl = function($p) use ($y) { return $p; };
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_arrow_function = 1,
+        .expr_closure = 1,
+    });
+}
+
+test "expr :: 静态成员 :: 常量/属性/方法三种访问" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\Foo::BAR;
+        \\Foo::$prop;
+        \\Foo::method();
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_class_const_fetch = 1,
+        .expr_static_property_fetch = 1,
+        .expr_static_call = 1,
+    });
+}
+
+test "expr :: nullsafe :: 方法调用与属性访问" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $obj?->m(); Foo?->prop;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_nullsafe_method_call = 1,
+        .expr_nullsafe_property_fetch = 1,
+    });
+}
+
+test "expr :: isset/empty :: 各成节点并承载变量列表" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php isset($a, $b); empty($c);", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_isset = 1, .expr_empty = 1 });
+}
+
+test "expr :: list 解构 :: 与数组字面量同时出现" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php list($m, $n) = [1, 2];", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_list = 1, .expr_array = 1 });
+}
+
+test "expr :: clone :: 产出 expr_clone" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php clone $obj;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_clone = 1 });
+}
+
+test "expr :: yield :: 带键值产出 expr_yield" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function g() { yield $k => $v; }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_yield = 1 });
+}
+
+test "expr :: include/require :: 四种形式均归 expr_include" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\include 'a.php';
+        \\include_once 'b.php';
+        \\require 'c.php';
+        \\require_once 'd.php';
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_include = 4 });
+}
+
+test "expr :: 类型转换 :: (int)$v 产出 expr_cast" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php (int)$v;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_cast = 1 });
+}
+
+test "expr :: 自增自减 :: 后置形式分别成节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $i++; $j--;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_post_inc = 1, .expr_post_dec = 1 });
+}
+
+test "expr :: 逻辑运算符 :: and/or/xor 归为二元" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $t = true and false or true xor false;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // and / or / xor 三个运算符均产出 expr_binary
+    try testing.expectTagCounts(tree, .{ .expr_binary = 3 });
+}
+
+test "expr :: spaceship :: <=> 归为二元" {
+    // 回归：`<=>` 此前完全未实现，`$a <=> $b` 产生 stmt_error。
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a <=> $b;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_binary = 1 });
+
+    const bin = testing.firstNode(tree, .expr_binary) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("<=>", tree.tokenSlice(tree.nodeMainToken(bin)));
+}
+
+test "expr :: 幂优先于一元负号 :: -$a ** 2 为 -($a ** 2)" {
+    // 回归：此前 `-$a ** 2` 被解析为 `(-$a) ** 2`，与 PHP 语义相反
+    //（PHP 中 `**` 优先级高于一元 `-`，`-2 ** 2` 为 `-4`）。
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php -$a ** 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+
+    const unary = testing.firstNode(tree, .expr_unary) orelse return error.TestUnexpectedResult;
+    const pow = tree.nodeData(unary).node;
+    try std.testing.expectEqual(.expr_binary, tree.nodeTag(pow));
+    try std.testing.expectEqualStrings("**", tree.tokenSlice(tree.nodeMainToken(pow)));
+}
+
+test "expr :: static 匿名函数 :: 与 static:: 区分" {
+    // 回归：`$f = static function () {};` 此前解析失败（stmt_error + 误当函数声明）。
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$f = static function () {};
+        \\$g = static::class;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_closure = 1,
+        .expr_class_const_fetch = 1,
+        .stmt_error = 0,
+    });
+}
+
+test "expr :: 移位运算 :: 归为二元" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $s = 1 << 2;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_binary = 1 });
+}
+
+test "expr :: 魔术常量 :: __LINE__ 等归为 expr_magic_const" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = __LINE__;
+        \\$b = __DIR__;
+        \\$c = __FUNCTION__;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_magic_const = 3 });
+}
+
+test "expr :: 插值字符串 :: 双引号含变量与花括号表达式" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$name = "hi $x and {$y->z}";
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_encapsed = 1,
+        // $name（赋值左侧）、$x（简单插值）、$y（{$y->z} 的变量部分）共 3 个
+        .expr_variable = 3,
+    });
+    // 字面片段被插值点切分为多段
+    try std.testing.expect(testing.countTag(tree, .expr_string_part) >= 2);
+}
+
+test "expr :: heredoc :: 启用插值" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$s = <<<EOT
+        \\text $v end
+        \\EOT;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // $s（赋值左侧）与 $v（插值）共 2 个
+    try testing.expectTagCounts(tree, .{ .expr_encapsed = 1, .expr_variable = 2 });
+}
+
+test "expr :: nowdoc :: 关闭插值且不含变量节点" {
+    const gpa = std.testing.allocator;
+    // 用函数包住，避免领先的 `$s` 被计入变量
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function f() {
+        \\    return <<<'EOT'
+        \\text $v end
+        \\EOT;
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_encapsed = 1,
+        .expr_string_part = 1,
+        .expr_variable = 0,
+    });
+}
+
+test "expr :: 限定名 :: 完全限定形式" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php new \\Foo\\Bar();", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .name_fully_qualified = 1 });
+}
+
+test "expr :: 限定名 :: 相对形式 namespace\\Foo" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php new namespace\\Foo\\Bar();", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .name_relative = 1 });
+}
+
+test "expr :: 限定名 :: 变量形式（动态类名）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php new $cls();", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .name_var_like = 1 });
 }

@@ -1,0 +1,183 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_binary `-`
+        (expr_binary `+`
+          (expr_int `1`)
+          (expr_binary `*`
+            (expr_int `2`)
+            (expr_int `3`)
+          )
+        )
+        (expr_binary `%`
+          (expr_binary `/`
+            (expr_int `4`)
+            (expr_int `5`)
+          )
+          (expr_int `6`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$b`)
+      (expr_unary `-`
+        (expr_binary `**`
+          (expr_variable `$a`)
+          (expr_int `2`)
+        )
+      )
+    )
+  )
+  (stmt_expression `or`
+    (expr_binary `or`
+      (expr_binary `and`
+        (expr_assign `=`
+          (expr_variable `$c`)
+          (expr_binary `==`
+            (expr_variable `$a`)
+            (expr_int `1`)
+          )
+        )
+        (expr_binary `!=`
+          (expr_variable `$b`)
+          (expr_int `2`)
+        )
+      )
+      (expr_binary `xor`
+        (expr_binary `===`
+          (expr_variable `$c`)
+          (expr_int `3`)
+        )
+        (expr_binary `!==`
+          (expr_variable `$d`)
+          (expr_int `4`)
+        )
+      )
+    )
+  )
+  (stmt_expression `||`
+    (expr_binary `||`
+      (expr_binary `&&`
+        (expr_assign `=`
+          (expr_variable `$d`)
+          (expr_binary `<`
+            (expr_variable `$a`)
+            (expr_int `1`)
+          )
+        )
+        (expr_binary `>`
+          (expr_variable `$b`)
+          (expr_int `2`)
+        )
+      )
+      (expr_unary `!`
+        (expr_variable `$c`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$e`)
+      (expr_binary `|`
+        (expr_binary `&`
+          (expr_variable `$a`)
+          (expr_variable `$b`)
+        )
+        (expr_binary `^`
+          (expr_variable `$c`)
+          (expr_unary `~`
+            (expr_variable `$d`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$f`)
+      (expr_binary `>>`
+        (expr_binary `<<`
+          (expr_variable `$a`)
+          (expr_int `1`)
+        )
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$g`)
+      (expr_instanceof `$a`
+        (expr_variable `$a`)
+        (expr_const_fetch `Foo`
+          (name `Foo`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$h`)
+      (expr_error_suppress `@`
+        (expr_func_call `foo`
+          (name `foo`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_shell_exec ```)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$j`)
+      (expr_print `print`
+        (expr_variable `$a`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$k`)
+      (expr_binary `.`
+        (expr_cast `int`
+          (expr_variable `$a`)
+        )
+        (expr_cast `string`
+          (expr_variable `$b`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$l`)
+      (expr_binary `<=>`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$m`)
+      (expr_unary `-`
+        (expr_int `5`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$n`)
+      (expr_unary `+`
+        (expr_variable `$a`)
+      )
+    )
+  )
+)

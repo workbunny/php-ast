@@ -1,0 +1,46 @@
+(root `<?php`
+  (stmt_expression `f`
+    (expr_func_call `f`
+      (name `f`)
+      (expr_argument `1`
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_expression `g`
+    (expr_func_call `g`
+      (name `g`)
+      (expr_argument `a`
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_expression `$o`
+    (expr_method_call `$o`
+      (expr_property_fetch `$o`
+        (expr_variable `$o`)
+        (name `m`)
+      )
+      (expr_argument `1`
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_expression `Foo`
+    (expr_static_call `Foo`
+      (expr_const_fetch `Foo`
+        (name `Foo`)
+      )
+    )
+  )
+  (stmt_expression `$o`
+    (expr_nullsafe_method_call `$o`
+      (expr_variable `$o`)
+    )
+  )
+  (stmt_expression `strlen`
+    (expr_first_class_callable `strlen`
+      (name `strlen`)
+    )
+  )
+)

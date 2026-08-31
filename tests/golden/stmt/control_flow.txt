@@ -1,0 +1,81 @@
+(root `<?php`
+  (stmt_if `if`
+    (expr_variable `$a`)
+    (stmt_block `{`
+      (stmt_echo `echo`
+        (expr_int `1`)
+      )
+    )
+    (stmt_if `elseif`
+      (expr_variable `$b`)
+      (stmt_block `{`
+        (stmt_echo `echo`
+          (expr_int `2`)
+        )
+      )
+      (stmt_block `{`
+        (stmt_echo `echo`
+          (expr_int `3`)
+        )
+      )
+    )
+  )
+  (stmt_while `while`
+    (expr_variable `$c`)
+    (stmt_block `{`
+      (stmt_break `break`)
+    )
+  )
+  (stmt_for `for`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_int `0`)
+    )
+    (expr_binary `<`
+      (expr_variable `$i`)
+      (expr_int `3`)
+    )
+    (expr_post_inc `++`
+      (expr_variable `$i`)
+    )
+    (stmt_block `{`
+      (stmt_continue `continue`)
+    )
+  )
+  (stmt_for `for`
+    (stmt_block `{`
+      (stmt_break `break`)
+    )
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$xs`)
+    (expr_variable `$k`)
+    (expr_variable `$v`)
+    (stmt_block `{`)
+  )
+  (stmt_do `do`
+    (stmt_block `{`
+      (stmt_expression `--`
+        (expr_post_dec `--`
+          (expr_variable `$n`)
+        )
+      )
+    )
+    (expr_binary `>`
+      (expr_variable `$n`)
+      (expr_int `0`)
+    )
+  )
+  (stmt_switch `switch`
+    (expr_variable `$s`)
+    (stmt_switch_case `case`
+      (expr_int `1`)
+      (stmt_break `break`)
+    )
+    (stmt_default `default`
+      (stmt_echo `echo`
+        (expr_int `2`)
+      )
+    )
+  )
+)

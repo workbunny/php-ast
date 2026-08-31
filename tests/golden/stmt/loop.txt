@@ -1,0 +1,86 @@
+; 9 条诊断
+;   expected_token
+;   expected_expr
+;   expected_token
+;   expected_expr
+;   expected_token
+;   expected_expr
+;   expected_expr
+;   expected_expr
+;   expected_expr
+(root `<?php`
+  (stmt_while `while`
+    (expr_variable `$a`)
+    (stmt_block `{`
+      (stmt_expression `do_something`
+        (expr_func_call `do_something`
+          (name `do_something`)
+        )
+      )
+    )
+  )
+  (stmt_do `do`
+    (stmt_block `{`
+      (stmt_expression `--`
+        (expr_post_dec `--`
+          (expr_variable `$n`)
+        )
+      )
+    )
+    (expr_binary `>`
+      (expr_variable `$n`)
+      (expr_int `0`)
+    )
+  )
+  (stmt_for `for`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_int `0`)
+    )
+    (stmt_error `,`)
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$j`)
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `<`
+    (expr_binary `<`
+      (expr_variable `$i`)
+      (expr_int `10`)
+    )
+  )
+  (stmt_expression `++`
+    (expr_post_inc `++`
+      (expr_variable `$i`)
+    )
+  )
+  (stmt_error `,`)
+  (stmt_expression `--`
+    (expr_post_dec `--`
+      (expr_variable `$j`)
+    )
+  )
+  (stmt_error `)`)
+  (stmt_block `{`
+    (stmt_continue `continue`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$list`)
+    (expr_variable `$item`)
+    (stmt_block `{`
+      (stmt_echo `echo`
+        (expr_variable `$item`)
+      )
+    )
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$map`)
+    (expr_variable `$key`)
+    (expr_variable `$value`)
+    (stmt_block `{`
+      (stmt_break `break`)
+    )
+  )
+)
