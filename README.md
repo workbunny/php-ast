@@ -165,6 +165,7 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `src/parser_expr.zig` | 表达式级 `parse*` 与运算符优先级表（含静态/动态访问后缀、闭包、箭头函数…）                                   |
 | `src/parser_type.zig` | 类型级 `parse*`（可空/联合/交集/DNF/标识符/伪类型/泛型/数组后缀…）                                           |
 | `src/walk.zig`        | 遍历与注释：`childNodes`/`walk`/`walkStack`/`leadingComments`/`trailingComments`（子节点关系在 `ast.zig`）   |
+| `src/project.zig`     | 目录级能力：`loadDir` 扫描目录批量解析 `.php`，产物 `ProjectAst` 为多文件森林 + 跨文件顶层语句视图          |
 | `src/testing.zig`     | 共享测试断言工具（对应 `std.testing` 的项目级等价物）                                                        |
 | `src/coverage.zig`    | 覆盖矩阵，编译期强制每个 `Node.Tag` / `Token.Tag` 都有用例                                                   |
 | `src/dump.zig`        | AST 文本渲染，用于调试与黄金快照                                                                             |

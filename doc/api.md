@@ -6,11 +6,11 @@
 const php_ast = @import("php_ast");
 ```
 
-各子模块以同名命名空间再导出，可按 `php_ast.ast` / `php_ast.walk` / `php_ast.token`
-/ `php_ast.lexer` / `php_ast.version` / `php_ast.dump` 访问。`root.zig` 同时再导出顶层
-便捷别名 `php_ast.parse`、`php_ast.Ast`、`php_ast.ParseError`、`php_ast.Node`、
-`php_ast.PhpVersion`、`php_ast.Token`。其余类型（如 `Index`、`ByteOffset`）经
-`php_ast.ast.Index` 等子模块路径访问。
+各子模块以同名命名空间再导出，可按 `php_ast.ast` / `php_ast.walk` / `php_ast.project`
+/ `php_ast.token` / `php_ast.lexer` / `php_ast.version` / `php_ast.dump` 访问。
+`root.zig` 同时再导出顶层便捷别名 `php_ast.parse`、`php_ast.loadDir`、`php_ast.Ast`、
+`php_ast.ProjectAst`、`php_ast.ParseError`、`php_ast.Node`、`php_ast.PhpVersion`、
+`php_ast.Token`。其余类型（如 `Index`、`ByteOffset`）经 `php_ast.ast.Index` 等子模块路径访问。
 
 ---
 
@@ -20,10 +20,11 @@ const php_ast = @import("php_ast");
 2. [顶层入口：parse](#2-顶层入口-parse)
 3. [Ast：解析结果与访问 API](#3-ast-解析结果与访问-api)
 4. [walk：树遍历与注释](#4-walk-树遍历与注释)
-5. [token：词法单元](#5-token-词法单元)
-6. [lexer：词法分析](#6-lexer-词法分析)
-7. [version：PHP 版本谓词](#7-version-php-版本信息与门控)
-8. [dump：AST 文本渲染](#8-dump-ast-文本渲染)
+5. [project：目录加载](#5-project-目录加载)
+6. [token：词法单元](#6-token-词法单元)
+7. [lexer：词法分析](#7-lexer-词法分析)
+8. [version：PHP 版本谓词](#8-version-php-版本信息与门控)
+9. [dump：AST 文本渲染](#9-dump-ast-文本渲染)
 
 ---
 
@@ -389,7 +390,64 @@ for (comments.items) |c| { /* tree.tokenSlice(c) */ }
 
 ---
 
-## 5. token：词法单元
+## 5. project：目录加载
+
+```zig
+const php_ast.project = @import("project.zig");
+```
+
+### `loadDir`
+
+```zig
+pub fn loadDir(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    dir_path: []const u8,
+    version: PhpVersion,
+) !ProjectAst
+```
+
+**简介**：扫描 `dir_path` 目录（递归），解析其中全部 `.php` 文件（跳过其他类型），
+返回多文件 AST 森林 `ProjectAst`。`version` 统一应用于全部文件。
+
+`io` 为 Zig 0.16 显式 I/O 上下文：测试传 `std.testing.io`；生产代码经
+`std.Io.Threaded.init(...).io()` 等获得。失败仅因 IO（目录不存在/读文件失败）或内存不足；
+单个文件的**语法**错误不中断，收集进对应 `Ast.errors`。用毕务必调用 `ProjectAst.deinit`。
+
+**设计要点**：
+- **森林而非大树**：每文件一棵 `Ast`，文件边界天然保留（不合并节点索引，避免
+  对全部 `data` 引用做索引重映射）。
+- **文件排序**：按路径字典序解析存储，输出确定、可复现。
+- **源码自有**：`loadDir` 从文件读出源码（`[:0]const u8`），`ProjectAst` 拥有每文件
+  源码与路径，`deinit` 统一释放。
+
+```zig
+var project = try php_ast.loadDir(gpa, std.testing.io, "src/", php_ast.PhpVersion.fromComponents(8, 5));
+defer project.deinit(gpa);
+for (project.rootStmts()) |top| {
+    // top.file 为文件下标，top.stmt 为该文件内顶层语句节点
+}
+```
+
+### `ProjectAst`
+
+多文件 AST 森林 + 跨文件顶层语句视图。
+
+```zig
+pub fn deinit(self: *ProjectAst, gpa: std.mem.Allocator) void  // 释放全部文件与视图
+pub fn fileCount(self: ProjectAst) usize                      // 文件数
+pub fn fileAt(self: ProjectAst, i: usize) ProjectFile         // 取文件（path/source/ast）
+pub fn filePath(self: ProjectAst, i: usize) []const u8         // 相对 root_path 的路径
+pub fn fileAst(self: ProjectAst, i: usize) *const Ast          // 取文件 AST
+pub fn rootStmts(self: ProjectAst) []const TopStmt             // 跨文件顶层语句视图
+```
+
+`TopStmt` 为 `{ file: usize, stmt: ast.Index }`：`file` 定位文件，`stmt` 为该文件内顶层
+语句节点。配合 `fileAst` 即可在整包分析中按文件定位任意节点。
+
+---
+
+## 6. token：词法单元
 
 ```zig
 const php_ast.token = @import("token.zig");

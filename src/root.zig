@@ -11,15 +11,20 @@ pub const lexer = @import("lexer.zig");
 pub const version = @import("version.zig");
 pub const walk = @import("walk.zig");
 pub const dump = @import("dump.zig");
+pub const project = @import("project.zig");
 
 pub const Ast = @import("ast.zig").Ast;
 pub const ParseError = @import("ast.zig").ParseError;
 pub const Node = @import("ast.zig").Node;
 pub const PhpVersion = @import("version.zig").PhpVersion;
 pub const Token = @import("token.zig").Token;
+pub const ProjectAst = @import("project.zig").ProjectAst;
 
 /// 解析入口便捷别名（`Ast.parse` 的顶层再导出）。
 pub const parse = @import("ast.zig").Ast.parse;
+
+/// 目录加载便捷别名（`project.loadDir` 的顶层再导出）。
+pub const loadDir = @import("project.zig").loadDir;
 
 // 单元测试入口：强制引用各模块，使其内部的 `test` 块被 test runner 收集。
 //
@@ -42,6 +47,7 @@ test {
     _ = @import("parser_expr.zig");
     _ = @import("parser_type.zig");
     _ = @import("walk.zig");
+    _ = @import("project.zig");
     // 覆盖矩阵：编译期强制每个 Node.Tag 都有用例（新增节点忘补即编译失败）
     _ = @import("coverage.zig");
     _ = @import("dump.zig");
