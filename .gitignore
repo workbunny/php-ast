@@ -13,7 +13,7 @@ composer.lock
 # reference
 reference/
 
-./zig-pkg
+zig-pkg
 
 # IDE / OS
 .idea/
