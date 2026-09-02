@@ -2,12 +2,14 @@ const std = @import("std");
 
 /// 构建脚本：提供 `test` 步骤，编译并执行库内全部单元测试。
 ///
-/// 库以命名模块 `php_ast`（根 `src/root.zig`）暴露。测试遵循 Zig 惯例：
-/// `test` 块就近写在被测源文件底部，而非集中于独立 `tests/` 目录。这样
-/// 测试与实现同处一文件、可读性强，且能覆盖文件内私有的辅助函数。
+/// 库以公开模块 `php_ast`（根 `src/root.zig`）暴露——`addModule` 会把模块注册到
+/// `b.modules` 表，下游经 `b.dependency(...).module("php_ast")` 取用（`createModule`
+/// 只建私有模块，下游拿不到）。测试遵循 Zig 惯例：`test` 块就近写在被测源文件
+/// 底部，而非集中于独立 `tests/` 目录。这样测试与实现同处一文件、可读性强，
+/// 且能覆盖文件内私有的辅助函数。
 ///
 /// 收集是自动的：`b.addTest(.{ .root_module = lib_mod })` 会递归扫描 `lib_mod`
-/// 及其全部传递依赖（token/ast/lexer/parser*/walk/version）中的 `test` 块，
+/// 及其全部传递依赖（token/ast/lexer/parser*/walk/project/version）中的 `test` 块，
 /// 新增测试文件时**无需**改动本文件。
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -16,8 +18,9 @@ pub fn build(b: *std.Build) void {
     // `zig build test -Dupdate-golden` 重新生成黄金快照。默认 false（只比对不写入）。
     const update_golden = b.option(bool, "update-golden", "重新生成 tests/golden 下的快照文件") orelse false;
 
-    // 库模块：对外暴露为 "php_ast"，同时充当测试入口（test 块即在此模块树内）。
-    const lib_mod = b.createModule(.{
+    // 库模块：公开注册为 "php_ast"，供下游 `b.dependency(...).module("php_ast")` 获取，
+    // 同时充当测试入口（test 块即在此模块树内）。
+    const lib_mod = b.addModule("php_ast", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,

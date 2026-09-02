@@ -13,6 +13,8 @@ composer.lock
 # reference
 reference/
 
+./zig-pkg
+
 # IDE / OS
 .idea/
 .vscode/

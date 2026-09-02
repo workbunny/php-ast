@@ -1,9 +1,14 @@
 .{
     .name = .php_ast,
-    .version = "0.3.0",
+    .version = "0.3.1",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0xe570435e6f630429,
-    .dependencies = .{},
+    .dependencies = .{
+        .php_ast = .{
+            .url = "d:/project/php-ast",
+            .hash = "php_ast-0.3.1-KQRjbxnbBAA-gOWKRl4rMKNt4BmItN-FIyxOrcGqAGT3",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
