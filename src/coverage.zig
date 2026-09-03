@@ -87,6 +87,7 @@ const cases = [_]Case{
     .{ .tag = .stmt_error, .src = "<?php => 1;", .allow_errors = true },
     // ---- 表达式 ----
     .{ .tag = .expr_variable, .src = "<?php $a;" },
+    .{ .tag = .expr_variable_ref, .src = "<?php $$a;" },
     .{ .tag = .expr_int, .src = "<?php 1;" },
     .{ .tag = .expr_float, .src = "<?php 1.5;" },
     .{ .tag = .expr_string, .src = "<?php 'a';" },

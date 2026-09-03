@@ -3,7 +3,9 @@
     (name `Bar`)
     (name `Baz`)
     (stmt_class_const `const` name=`NAME`
-      (expr_string `'x'`)
+      (const_decl `NAME`
+        (expr_string `'x'`)
+      )
     )
     (stmt_property `$n`
       (type_name `int`

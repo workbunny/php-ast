@@ -12,6 +12,10 @@ pub const version = @import("version.zig");
 pub const walk = @import("walk.zig");
 pub const dump = @import("dump.zig");
 pub const project = @import("project.zig");
+pub const name_resolver = @import("name_resolver.zig");
+pub const node_finder = @import("node_finder.zig");
+pub const parent_map = @import("parent_map.zig");
+pub const compat = @import("compat.zig");
 
 pub const Ast = @import("ast.zig").Ast;
 pub const ParseError = @import("ast.zig").ParseError;
@@ -48,6 +52,10 @@ test {
     _ = @import("parser_type.zig");
     _ = @import("walk.zig");
     _ = @import("project.zig");
+    _ = @import("name_resolver.zig");
+    _ = @import("node_finder.zig");
+    _ = @import("parent_map.zig");
+    _ = @import("compat.zig");
     // 覆盖矩阵：编译期强制每个 Node.Tag 都有用例（新增节点忘补即编译失败）
     _ = @import("coverage.zig");
     _ = @import("dump.zig");

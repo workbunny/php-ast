@@ -188,6 +188,7 @@ pub const Node = struct {
 
         // 表达式
         expr_variable,
+        expr_variable_ref, // 间接变量 $$a / ${expr}：name 为子节点（对齐 php-parser Expr_Variable）
         expr_int,
         expr_float,
         expr_string,
@@ -534,9 +535,9 @@ pub const Ast = struct {
             },
             .stmt_for => {
                 const c = tree.extraData(data.extra_and_node[0], stmt.ForComponents);
-                try emitOpt(c.init, ctx, onChild);
-                try emitOpt(c.cond, ctx, onChild);
-                try emitOpt(c.inc, ctx, onChild);
+                try emitRange(tree, c.init, ctx, onChild);
+                try emitRange(tree, c.cond, ctx, onChild);
+                try emitRange(tree, c.inc, ctx, onChild);
                 try onChild(ctx, c.body);
             },
             .stmt_foreach => {
@@ -571,13 +572,14 @@ pub const Ast = struct {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassComponents);
                 try emitRange(tree, c.attrs, ctx, onChild);
                 try emitOpt(c.extends, ctx, onChild);
-                try emitOpt(c.implements, ctx, onChild);
+                try emitRange(tree, c.implements, ctx, onChild);
                 try emitRange(tree, c.stmts, ctx, onChild);
             },
             .stmt_interface, .stmt_trait, .stmt_enum => {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents);
                 try emitRange(tree, c.attrs, ctx, onChild);
                 try emitOpt(c.backing, ctx, onChild);
+                try emitRange(tree, c.ext_impl, ctx, onChild);
                 try emitRange(tree, c.stmts, ctx, onChild);
             },
             .stmt_property => {
@@ -595,7 +597,7 @@ pub const Ast = struct {
             .stmt_class_const => {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents);
                 try emitOpt(c.type, ctx, onChild);
-                try emitOpt(data.extra_and_opt_node[1], ctx, onChild);
+                try emitRange(tree, c.decls, ctx, onChild);
                 try emitRange(tree, c.attrs, ctx, onChild);
             },
 
@@ -698,7 +700,11 @@ pub const Ast = struct {
                 try emitRange(tree, c.args, ctx, onChild);
             },
 
-            // 一元 / 字面量叶子
+            // 间接变量 `$$a`/`${expr}`（php-parser 同归 Expr_Variable）：name 是子节点，
+            // 递归表达嵌套（`$$$a` → ref(ref(variable))）。简单 `$a` 见下方叶子组。
+            .expr_variable_ref => try onChild(ctx, data.node),
+
+            // 一元 / 字面量叶子（简单 `$a` 名字即 token，无子节点）
             .expr_variable,
             .expr_int,
             .expr_float,
@@ -844,7 +850,13 @@ pub const Ast = struct {
             .stmt_enum,
             => tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents).name,
             .stmt_property => tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents).name,
-            .stmt_class_const => tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents).name,
+            .stmt_class_const => blk: {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents);
+                if (c.decls.start == c.decls.end) break :blk null;
+                // decls 区间内存的是节点下标（addNodeList 连续写入），首项即 const_decl。
+                const first_item: Index = @enumFromInt(tree.extra_data[@intFromEnum(c.decls.start)]);
+                break :blk tree.nodeData(first_item).node_and_token[1];
+            },
             .stmt_case => tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents).name,
             .const_decl, .declare_declare => data.node_and_token[1],
             .static_var => tree.extraData(data.extra, stmt.StaticVarComponents).name,

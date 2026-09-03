@@ -36,11 +36,15 @@ pub const NewComponents = struct {
 pub const ArgumentComponents = struct {
     key: OptionalTokenIndex,
     unpack: bool,
+    /// call-time 引用传参 `f(&$a)`（PHP 5.4 起语法保留，对齐 php-parser Arg.byRef）。
+    by_ref: bool,
 };
 
 pub const ArrayItemComponents = struct {
     key: OptionalIndex,
     unpack: bool,
+    /// 引用元素：`[&$v]`、`['k' => &$v]`、`list(&$v)`（ArrayItem.byRef）。
+    by_ref: bool,
 };
 
 pub const TernaryComponents = struct {
@@ -52,6 +56,8 @@ pub const ArrowFunctionComponents = struct {
     params: SubRange,
     ret: OptionalIndex,
     body: Index,
+    /// 箭头函数引用返回 `fn&($x) => ...`（ArrowFunction.byRef）。
+    by_ref: bool,
 };
 
 pub const ClosureComponents = struct {
@@ -59,6 +65,8 @@ pub const ClosureComponents = struct {
     uses: SubRange,
     ret: OptionalIndex,
     body: Index,
+    /// 闭包引用返回 `function &(...) { }`（Closure.byRef）。
+    by_ref: bool,
 };
 
 pub const ClosureUseComponents = struct {
@@ -95,13 +103,29 @@ fn isCastKeyword(p: *const Parser) bool {
     return false;
 }
 
+/// 名字链段的合法 token：标识符、变量式名字（`$name` 经 name_var_like）、以及关键字
+/// （php.y `identifier → T_STRING | semi_reserved`——关键字在名字内任意位置均可作段：
+/// `fn\use` / `private\public` / `namespace static`）。仅限制"该 token 是名字段形状"，
+/// 具体语境（声明名 vs 调用名）由调用方与表达式起始分派另行约束。
+pub fn isNamePart(tag: Token.Tag) bool {
+    return tag == .identifier or tag == .variable or tag.isKeyword();
+}
+
 pub fn parseName(p: *Parser) ast.ParseError!?Index {
     const first_tag = p.tokTag();
     const first = p.nextToken();
     var last = first;
+    // FQ 名（\Foo\Bar）：前导 `\` 之后要先吃首名字段，再进入 `\段` 链。
+    // （旧实现只吃前导 `\`，导致 `new \Foo\Bar()` 的 `Foo\Bar` 残留被误当函数调用——
+    // 语法合法故弱断言不报错，属隐蔽 bug。）
+    if (first_tag == .backslash) {
+        if (isNamePart(p.tokTag())) {
+            last = p.nextToken();
+        }
+    }
     while (p.tokTag() == .backslash) {
         _ = p.nextToken();
-        if (p.tokTag() == .identifier or p.tokTag() == .variable) {
+        if (isNamePart(p.tokTag())) {
             last = p.nextToken();
         }
     }
@@ -117,6 +141,187 @@ pub fn parseName(p: *Parser) ast.ParseError!?Index {
         .main_token = first,
         .data = .{ .token = last },
     })) orelse unreachable;
+}
+
+/// 解析 `new` 后的类名引用：名字形态（`class_name`）或变量形态（`new_variable`）。
+/// 对齐 PHP 语法 `class_name_reference → class_name | new_variable | '(' expr ')'`。
+///
+/// 名字形态：`Foo` / `\Foo\Bar` / `namespace\Foo`（交给 `parseName`）；名字后若接
+/// `::$`（`Foo::$bar` 静态属性取类名）则进入 new_variable 后缀链。
+/// 变量形态：纯变量 `$cls` 归约到 `parseName` 产出 `name_var_like`（既有语义：
+/// 变量被视作"变量式名字"）；带后缀（`[]`/`->`/`?->`/`::$`）走变量表达式路径
+/// （`name_var_like` 表达不了后缀链）。`(expr)`（PHP 8.0 任意表达式）由
+/// `parsePrimary` 的括号分支自然消化。
+/// 不消费 `(`——`new` 的构造参数括号由 `kw_new` 分支统一解析。
+fn parseClassNameReference(p: *Parser) ast.ParseError!?Index {
+    switch (p.tokTag()) {
+        .identifier, .backslash, .kw_namespace, .kw_static => {
+            // 名字形态：`new Foo` / `new \Foo\Bar` / `new namespace\Foo` / `new static()` /
+            // `new parent()`（self/parent 为上下文关键字，lexer 归为 identifier）。
+            // 这些必须走 `parseName` 归约为 name 节点——若落 parsePrimary，`kw_static`
+            // 会被 `parsePostfixContinue` 消费 `()`（把 `new static()` 的构造参数当
+            // 函数调用吃掉）。
+            const name = (try parseName(p)) orelse return null;
+            if (p.tokTag() == .double_colon) {
+                // `Foo::$bar`：名字作 class 的静态属性取类名（new_variable 链）。
+                return (try parseNewVariableSuffix(p, name)) orelse return null;
+            }
+            return name;
+        },
+        .variable => {
+            // 预看下一 token：带后缀（[]/->/?->/::$）才走变量表达式路径，否则保持
+            // 纯变量的 `name_var_like` 归约（兼容既有 AST 与黄金快照）。
+            const save = p.tok_i;
+            _ = p.nextToken();
+            const has_suffix: bool = switch (p.tokTag()) {
+                .lbracket, .arrow, .nullsafe_arrow, .double_colon => true,
+                else => false,
+            };
+            p.tok_i = save;
+            if (has_suffix) {
+                const base = (try parsePrimary(p)) orelse return null;
+                return (try parseNewVariableSuffix(p, base)) orelse return null;
+            }
+            return (try parseName(p)) orelse return null;
+        },
+        else => {
+            // 括号表达式 / 函数调用结果等（`(expr)`、`foo()` 作类名）
+            const base = (try parsePrimary(p)) orelse return null;
+            return (try parseNewVariableSuffix(p, base)) orelse return null;
+        },
+    }
+}
+
+/// 在基表达式上继续解析 `new_variable` 允许的后缀：`[]` 下标、`->`/`?->` 属性、
+/// `::$` 静态属性（php.y new_variable 右递归链，不含 `()`）。
+///
+/// 与 `parsePostfixContinue` 的区别：不消费 `()`（那是 `new` 的构造参数），也把
+/// `?->` 限定为属性形态（php.y new_variable 的 `?-> property_name`，不接方法调用）。
+/// 遇其他 token 返回基节点（后续由调用方按上下文处理）。
+/// 解析 simple_variable（php.y）：`$a` | `$$a`/`$$$a`（间接嵌套）| `${expr}`。
+/// 供需要"仅简单变量、不含后缀链"的语境使用（`global` 列表等）。
+pub fn parseSimpleVariable(p: *Parser) ast.ParseError!?Index {
+    return switch (p.tokTag()) {
+        .variable => blk: {
+            const t = p.nextToken();
+            break :blk (try p.addNode(.{
+                .tag = .expr_variable,
+                .main_token = t,
+                .data = .{ .token = t },
+            })) orelse unreachable;
+        },
+        .dollar => blk: {
+            const d = p.nextToken();
+            const name = (try parseVariableName(p)) orelse return null;
+            break :blk (try p.addNode(.{
+                .tag = .expr_variable_ref,
+                .main_token = d,
+                .data = .{ .node = name },
+            })) orelse unreachable;
+        },
+        else => null,
+    };
+}
+
+/// 解析 `$` 之后的"动态变量名"部分（php.y `simple_variable` 的花括号/嵌套形态）：
+/// - `.variable`（`$a`）→ 简单变量叶子（名字即 token）；
+/// - `.dollar`（再一个 `$`，`$$a`/`$$$a`）→ 递归，外层 expr_variable 的 name 是
+///   内层 expr_variable（间接引用嵌套）；
+/// - `.lbrace`（`${expr}`）→ 括号内任意表达式作名字（`${foo()}` 等）。
+/// 返回名字节点（变量叶子或表达式节点）。
+fn parseVariableName(p: *Parser) ast.ParseError!?Index {
+    return switch (p.tokTag()) {
+        .variable => blk: {
+            const t = p.nextToken();
+            break :blk (try p.addNode(.{
+                .tag = .expr_variable,
+                .main_token = t,
+                .data = .{ .token = t },
+            })) orelse unreachable;
+        },
+        .dollar => blk: {
+            const d = p.nextToken();
+            const inner = (try parseVariableName(p)) orelse return null;
+            break :blk (try p.addNode(.{
+                .tag = .expr_variable_ref,
+                .main_token = d,
+                .data = .{ .node = inner },
+            })) orelse unreachable;
+        },
+        .lbrace => {
+            _ = p.nextToken();
+            const e = (try parseExpr(p)) orelse return null;
+            _ = p.expectToken(.rbrace) orelse return null;
+            return e;
+        },
+        else => {
+            p.warn(ast.Error.Tag.expected_variable);
+            return null;
+        },
+    };
+}
+
+fn parseNewVariableSuffix(p: *Parser, base: Index) ast.ParseError!?Index {
+    var e = base;
+    while (true) {
+        switch (p.tokTag()) {
+            .lbracket => {
+                _ = p.nextToken();
+                var dim: OptionalIndex = .none;
+                if (p.tokTag() != .rbracket) {
+                    const d = (try parseExpr(p)) orelse return null;
+                    dim = OptionalIndex.fromIndex(d);
+                }
+                _ = p.expectToken(.rbracket);
+                e = (try p.addNode(.{
+                    .tag = .expr_array_dim_fetch,
+                    .main_token = p.nodeMainToken(e),
+                    .data = .{ .node_and_opt_node = .{ e, dim } },
+                })) orelse unreachable;
+            },
+            .arrow => {
+                _ = p.nextToken();
+                const name = (try parseName(p)) orelse return null;
+                e = (try p.addNode(.{
+                    .tag = .expr_property_fetch,
+                    .main_token = p.nodeMainToken(e),
+                    .data = .{ .node_and_node = .{ e, name } },
+                })) orelse unreachable;
+            },
+            .nullsafe_arrow => {
+                // `new $a?->b`：空安全属性取类名（8.0）。只到属性，不消费 `()`。
+                _ = p.nextToken();
+                const name = (try parseName(p)) orelse return null;
+                e = (try p.addNode(.{
+                    .tag = .expr_nullsafe_property_fetch,
+                    .main_token = p.nodeMainToken(e),
+                    .data = .{ .node_and_node = .{ e, name } },
+                })) orelse unreachable;
+            },
+            .double_colon => {
+                // `Foo::$bar` / `$a::$b` / `...::$c`：静态属性取类名。链可继续
+                // （`A::$A::$b`）。仅 $var 形态归 static property；名字形态（无 $）
+                // 落 class const（`Foo::BAR`，保守对齐 parsePostfixContinue 的区分）。
+                _ = p.nextToken();
+                const name = (try parseName(p)) orelse return null;
+                const name_main = p.nodeMainToken(name);
+                if (tokenTagAt(p, name_main) == .variable) {
+                    e = (try p.addNode(.{
+                        .tag = .expr_static_property_fetch,
+                        .main_token = p.nodeMainToken(e),
+                        .data = .{ .node_and_node = .{ e, name } },
+                    })) orelse unreachable;
+                } else {
+                    e = (try p.addNode(.{
+                        .tag = .expr_class_const_fetch,
+                        .main_token = p.nodeMainToken(e),
+                        .data = .{ .node_and_node = .{ e, name } },
+                    })) orelse unreachable;
+                }
+            },
+            else => return e,
+        }
+    }
 }
 
 pub fn parseExpr(p: *Parser) ast.ParseError!?Index {
@@ -494,6 +699,20 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
             const t = p.nextToken();
             return (try p.addNode(.{ .tag = .expr_variable, .main_token = t, .data = .{ .token = t } })) orelse unreachable;
         },
+        // 复杂/间接变量：`$$a`、`$$$a`、`${'a'}`、`${foo()}`、`${$a}`。
+        // lexer 已把首个落单 `$` 产为 dollar token，名字部分按 php.y
+        // `simple_variable → '$' '{' expr '}' | '$' simple_variable` 递归。
+        // AST 形态：`expr_variable_ref`，name 为子节点，对齐 php-parser
+        // `Expr\Variable` 的 name 可为表达式（tag 差异见 doc/special.md 归一表）。
+        .dollar => {
+            const d = p.nextToken();
+            const name = (try parseVariableName(p)) orelse return null;
+            return (try p.addNode(.{
+                .tag = .expr_variable_ref,
+                .main_token = d,
+                .data = .{ .node = name },
+            })) orelse unreachable;
+        },
         .kw_true, .kw_false, .kw_null => {
             const t = p.nextToken();
             const name = (try p.addNode(.{ .tag = .name, .main_token = t, .data = .{ .token = t } })) orelse unreachable;
@@ -520,45 +739,31 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
                 .data = .{ .token = t },
             })) orelse unreachable;
         },
-        .identifier => {
-            const name = (try parseName(p)) orelse return null;
-            const t = p.nodeMainToken(name);
-            if (p.tokTag() == .lparen) {
-                const save = p.tok_i;
-                _ = p.nextToken();
-                if (p.tokTag() == .ellipsis) {
-                    _ = p.nextToken();
-                    if (p.tokTag() == .rparen) {
-                        _ = p.nextToken();
-                        return (try p.addNode(.{
-                            .tag = .expr_first_class_callable,
-                            .main_token = t,
-                            .data = .{ .node = name },
-                        })) orelse unreachable;
-                    }
-                }
-                p.tok_i = save;
-                const args = try parseArgs(p);
-                return (try p.addNode(.{
-                    .tag = .expr_func_call,
-                    .main_token = t,
-                    .data = .{ .node_and_range = .{ .node = name, .range = .{ .start = args.start, .end = args.end } } },
-                })) orelse unreachable;
-            }
-            return (try p.addNode(.{
-                .tag = .expr_const_fetch,
-                .main_token = t,
-                .data = .{ .node = name },
-            })) orelse unreachable;
-        },
+        .identifier => return parseIdentifierLike(p),
+        // 完全限定名起始的表达式：`\Foo\Bar()` 调用 / `\Foo` 常量引用。
+        .backslash => return parseIdentifierLike(p),
         .kw_new => {
+
+            // 先记游标再消费 `new`：类名缺失（缺类名直接 eof/`;`）时须回溯到 `new`
+            // 前返回 null，维持「parseExpr 失败不消费 token」的不变量——否则上层
+            // 错误恢复会把 eof 当可消费 token 越界推进。
+            const save = p.tok_i;
             const t = p.nextToken();
             var name: Index = undefined;
             if (p.tokTag() == .kw_class) {
                 // 匿名类：`new class(...) [extends X] [implements Y] { ... }`
-                name = (try decl.parseAnonymousClass(p, p.emptySubRange())) orelse return null;
+                name = (try decl.parseAnonymousClass(p, p.emptySubRange())) orelse {
+                    p.tok_i = save;
+                    return null;
+                };
             } else {
-                name = (try parseName(p)) orelse return null;
+                // 类名引用：名字形态（parseName）或 new_variable 形态（$cls / $arr['c'] /
+                // $obj->prop）。此前只调 parseName，导致 `new $arr['c']()` 被错误解作
+                // `(new $arr)['c']()`。对齐 PHP 语法 class_name_reference → class_name | new_variable。
+                name = (try parseClassNameReference(p)) orelse {
+                    p.tok_i = save;
+                    return null;
+                };
             }
             var args: ListRange = p.emptyRange();
             if (p.tokTag() == .lparen) {
@@ -588,16 +793,28 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
                     _ = p.nextToken();
                     unpack = true;
                 }
+                // 引用元素 `[&$v]`/`list(&$v)`：`&` 可出现在元素首（无键）或 `=>` 后
+                // （带键，键本身不可引用）。
+                var by_ref = false;
+                if (!unpack and p.tokTag() == .ampersand) {
+                    _ = p.nextToken();
+                    by_ref = true;
+                }
                 const val0 = (try parseExpr(p)) orelse return null;
                 var key: OptionalIndex = .none;
                 var val: Index = val0;
                 if (!unpack and p.tokTag() == .double_arrow) {
                     _ = p.nextToken();
+                    by_ref = false; // 键前的 `&`（非法输入）不归属 item
+                    if (p.tokTag() == .ampersand) {
+                        _ = p.nextToken();
+                        by_ref = true;
+                    }
                     const v2 = (try parseExpr(p)) orelse return null;
                     key = OptionalIndex.fromIndex(val0);
                     val = v2;
                 }
-                const extra = try p.addExtra(ArrayItemComponents{ .key = key, .unpack = unpack });
+                const extra = try p.addExtra(ArrayItemComponents{ .key = key, .unpack = unpack, .by_ref = by_ref });
                 const item = (try p.addNode(.{
                     .tag = .expr_array_item,
                     .main_token = p.nodeMainToken(val),
@@ -625,7 +842,20 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
             return e;
         },
         .kw_match => return parseMatch(p),
-        .kw_fn => return parseArrowFunction(p),
+        .kw_fn => {
+            // `fn` 后跟 `(` 或 `&(` 是箭头函数；否则 `fn` 是半保留字作名字链首段
+            // （`fn\use()` 关键字名调用）。前瞻不消费。
+            const save = p.tok_i;
+            _ = p.nextToken();
+            var is_arrow = p.tokTag() == .lparen;
+            if (!is_arrow and p.tokTag() == .ampersand) {
+                _ = p.nextToken();
+                is_arrow = p.tokTag() == .lparen;
+            }
+            p.tok_i = save;
+            if (is_arrow) return parseArrowFunction(p);
+            return parseIdentifierLike(p);
+        },
         .kw_function => return parseClosure(p),
         .kw_static => {
             // `static function () {}` 静态匿名函数；否则 `static` 作为类名走后缀
@@ -725,16 +955,28 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
                     _ = p.nextToken();
                     unpack = true;
                 }
+                // 引用元素 `[&$v]`/`list(&$v)`：`&` 可出现在元素首（无键）或 `=>` 后
+                // （带键，键本身不可引用）。
+                var by_ref = false;
+                if (!unpack and p.tokTag() == .ampersand) {
+                    _ = p.nextToken();
+                    by_ref = true;
+                }
                 const val0 = (try parseExpr(p)) orelse return null;
                 var key: OptionalIndex = .none;
                 var val: Index = val0;
                 if (!unpack and p.tokTag() == .double_arrow) {
                     _ = p.nextToken();
+                    by_ref = false; // 键前的 `&`（非法输入）不归属 item
+                    if (p.tokTag() == .ampersand) {
+                        _ = p.nextToken();
+                        by_ref = true;
+                    }
                     const v2 = (try parseExpr(p)) orelse return null;
                     key = OptionalIndex.fromIndex(val0);
                     val = v2;
                 }
-                const extra = try p.addExtra(ArrayItemComponents{ .key = key, .unpack = unpack });
+                const extra = try p.addExtra(ArrayItemComponents{ .key = key, .unpack = unpack, .by_ref = by_ref });
                 const item = (try p.addNode(.{
                     .tag = .expr_array_item,
                     .main_token = p.nodeMainToken(val),
@@ -756,10 +998,47 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
             })) orelse unreachable;
         },
         else => {
+            // 半保留字作名字起始（php.y `identifier → semi_reserved`）：`private\protected()
+            // `fn\use()` 等关键字链调用/常量引用。能到 parsePrimary 的语境均合法。
+            if (p.tokTag().isKeyword()) return parseIdentifierLike(p);
             p.warn(ast.Error.Tag.expected_expr);
             return null;
         },
     }
+}
+
+/// 名字起始的表达式：`Foo` / `A\B\C` / `\FQN` 及其调用/首类可调用形态。
+/// identifier 与半保留关键字（作名字起始）共用此逻辑——差异只在 parseName 的分派。
+fn parseIdentifierLike(p: *Parser) ast.ParseError!?Index {
+    const name = (try parseName(p)) orelse return null;
+    const t = p.nodeMainToken(name);
+    if (p.tokTag() == .lparen) {
+        const save = p.tok_i;
+        _ = p.nextToken();
+        if (p.tokTag() == .ellipsis) {
+            _ = p.nextToken();
+            if (p.tokTag() == .rparen) {
+                _ = p.nextToken();
+                return (try p.addNode(.{
+                    .tag = .expr_first_class_callable,
+                    .main_token = t,
+                    .data = .{ .node = name },
+                })) orelse unreachable;
+            }
+        }
+        p.tok_i = save;
+        const args = try parseArgs(p);
+        return (try p.addNode(.{
+            .tag = .expr_func_call,
+            .main_token = t,
+            .data = .{ .node_and_range = .{ .node = name, .range = .{ .start = args.start, .end = args.end } } },
+        })) orelse unreachable;
+    }
+    return (try p.addNode(.{
+        .tag = .expr_const_fetch,
+        .main_token = t,
+        .data = .{ .node = name },
+    })) orelse unreachable;
 }
 
 pub fn parseArgs(p: *Parser) ast.ParseError!ListRange {
@@ -777,6 +1056,13 @@ pub fn parseArgs(p: *Parser) ast.ParseError!ListRange {
             _ = p.nextToken();
             unpack = true;
         }
+        // call-time 引用实参 `f(&$a)`：实参位置首个 token 为 `&` 必是引用
+        // （按位与左操作数不能在实参首出现），且与展开互斥。
+        var by_ref = false;
+        if (!unpack and p.tokTag() == .ampersand) {
+            _ = p.nextToken();
+            by_ref = true;
+        }
         var val = (try parseExpr(p)) orelse return args;
         var key: OptionalTokenIndex = .none;
         if (!unpack and p.tokTag() == .colon) {
@@ -786,7 +1072,7 @@ pub fn parseArgs(p: *Parser) ast.ParseError!ListRange {
                 val = (try parseExpr(p)) orelse return args;
             }
         }
-        const extra = try p.addExtra(ArgumentComponents{ .key = key, .unpack = unpack });
+        const extra = try p.addExtra(ArgumentComponents{ .key = key, .unpack = unpack, .by_ref = by_ref });
         const arg = (try p.addNode(.{
             .tag = .expr_argument,
             .main_token = if (key.unwrap()) |k| k else p.nodeMainToken(val),
@@ -898,6 +1184,12 @@ fn parseYield(p: *Parser) ast.ParseError!?Index {
 
 fn parseArrowFunction(p: *Parser) ast.ParseError!?Index {
     const kw = p.nextToken();
+    // 引用返回 `fn&(...)`：fn 与参数表之间允许 `&`
+    var by_ref = false;
+    if (p.tokTag() == .ampersand) {
+        _ = p.nextToken();
+        by_ref = true;
+    }
     const pl = try decl.parseParamList(p);
     const params = pl orelse p.emptySubRange();
     var ret: OptionalIndex = .none;
@@ -908,7 +1200,7 @@ fn parseArrowFunction(p: *Parser) ast.ParseError!?Index {
     }
     _ = p.expectToken(.double_arrow);
     const body = (try parseExpr(p)) orelse return null;
-    const extra = try p.addExtra(ArrowFunctionComponents{ .params = params, .ret = ret, .body = body });
+    const extra = try p.addExtra(ArrowFunctionComponents{ .params = params, .ret = ret, .body = body, .by_ref = by_ref });
     return (try p.addNode(.{
         .tag = .expr_arrow_function,
         .main_token = kw,
@@ -918,6 +1210,12 @@ fn parseArrowFunction(p: *Parser) ast.ParseError!?Index {
 
 fn parseClosure(p: *Parser) ast.ParseError!?Index {
     const kw = p.nextToken();
+    // 引用返回 `function &(...) { }`：function 与参数表之间允许 `&`
+    var by_ref = false;
+    if (p.tokTag() == .ampersand) {
+        _ = p.nextToken();
+        by_ref = true;
+    }
     const pl = try decl.parseParamList(p);
     const params = pl orelse p.emptySubRange();
     var uses: SubRange = p.emptySubRange();
@@ -927,13 +1225,13 @@ fn parseClosure(p: *Parser) ast.ParseError!?Index {
         var ulist = try std.ArrayList(ExtraIndex).initCapacity(p.gpa, 0);
         defer ulist.deinit(p.gpa);
         while (p.tokTag() != .rparen and p.tokTag() != .eof) {
-            var by_ref = false;
+            var use_by_ref = false;
             if (p.tokTag() == .ampersand) {
                 _ = p.nextToken();
-                by_ref = true;
+                use_by_ref = true;
             }
             const name_tok = p.expectToken(.variable) orelse break;
-            const extra = try p.addExtra(ClosureUseComponents{ .name = name_tok, .by_ref = by_ref });
+            const extra = try p.addExtra(ClosureUseComponents{ .name = name_tok, .by_ref = use_by_ref });
             try ulist.append(p.gpa, extra);
             if (p.tokTag() == .comma) {
                 _ = p.nextToken();
@@ -957,7 +1255,7 @@ fn parseClosure(p: *Parser) ast.ParseError!?Index {
         ret = OptionalIndex.fromIndex(ty);
     }
     const body = (try stmt.parseBlock(p)) orelse return null;
-    const extra = try p.addExtra(ClosureComponents{ .params = params, .uses = uses, .ret = ret, .body = body });
+    const extra = try p.addExtra(ClosureComponents{ .params = params, .uses = uses, .ret = ret, .body = body, .by_ref = by_ref });
     return (try p.addNode(.{
         .tag = .expr_closure,
         .main_token = kw,
@@ -968,7 +1266,8 @@ fn parseClosure(p: *Parser) ast.ParseError!?Index {
 fn isAssignmentOp(t: Token.Tag) bool {
     return switch (t) {
         .equals, .plus_equal, .minus_equal, .asterisk_equal, .slash_equal, .percent_equal,
-        .dot_equal, .ampersand_equal, .pipe_equal, .caret_equal, .double_asterisk_equal => true,
+        .dot_equal, .ampersand_equal, .pipe_equal, .caret_equal, .double_asterisk_equal,
+        .left_shift_equal, .right_shift_equal, .null_coalesce_equal => true,
         else => false,
     };
 }
@@ -1005,6 +1304,140 @@ fn bindingPower(t: Token.Tag) [2]u8 {
 // ===========================================================================
 // 测试：表达式
 // ===========================================================================
+
+test "expr :: 引用形态 :: 数组/list 元素、call-time 实参、闭包/箭头返回与 use" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = [&$b, 'k' => &$c];
+        \\list($x, &$y) = $src;
+        \\consume(&$z);
+        \\$f = function &() use (&$out) { return $out; };
+        \\$g = fn&($n) => $n;
+        \\$h = static function &() { };
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .expr_array_item = 4, // 数组字面量 2 项 + list 解构 2 项
+        .expr_list = 1,
+        .expr_func_call = 1,
+        .expr_closure = 2,
+        .expr_arrow_function = 1,
+    });
+}
+
+test "expr :: 变量变量 :: 间接变量与花括号名全形态（对齐 variable/funcCall.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\${'a'};
+        \\${foo()};
+        \\$$a;
+        \\$$$a;
+        \\$$a['b'];
+        \\${'a'}();
+        \\$$a();
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // ref：${'a'}、${foo()}、$$a、$$$a×2、$$a['b']、${'a'}()、$$a() = 8
+    // simple variable：$$a、$$$a 内层、$$a['b']、$$a() = 4（${'a'} 名字是 string）
+    try testing.expectTagCounts(tree, .{
+        .expr_variable_ref = 8,
+        .expr_variable = 4,
+        .expr_func_call = 3, // ${foo()} + ${'a'}() + $$a()
+        .expr_array_dim_fetch = 1,
+    });
+}
+
+test "expr :: global :: 简单/间接变量均可（对齐 specialVars.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function a() {
+        \\    global $a, ${'b'}, $$c;
+        \\    static $c, $d = 'e';
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .stmt_global = 1,
+        .expr_variable = 2, // $a 与 $$c 的内层 $c（${'b'} 名字是 string）
+        .expr_variable_ref = 2, // ${'b'} + $$c
+        .static_var = 2,
+    });
+}
+
+test "expr :: 关键字名字 :: 名字链/调用/命名空间（对齐 keywordsInNamespacedName.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\namespace fn;
+        \\namespace fn\use;
+        \\namespace self;
+        \\namespace parent;
+        \\namespace static {
+        \\    fn\use();
+        \\    \fn\use();
+        \\    namespace\fn\use();
+        \\    private\protected\public\static\abstract\final();
+        \\    fn\foo();
+        \\}
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .stmt_namespace = 5,
+        .name = 8, // 5 声明名 + fn\use/fn\foo/chain 三个调用名（链段整链一个 name）
+        .name_fully_qualified = 1, // \fn\use
+        .name_relative = 1, // namespace\fn\use
+        .expr_func_call = 5,
+    });
+}
+
+test "expr :: 类常量 :: 关键字名与多常量（对齐 semiReserved.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class Test {
+        \\    const TRAIT = 3, FINAL = 4;
+        \\    public const LIST = 5, STATIC = 6;
+        \\}
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_class_const = 2, .const_decl = 4 });
+}
+
+test "expr :: 复合赋值 :: 移位与空合并 <<= >>= ??=" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php $a <<= 1; $b >>= 2; $c ??= 3;", testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_assign_op = 3 });
+}
+
+test "expr :: 错误恢复 :: 残缺 new/后缀到 eof 不越界（对齐 errorHandling fixture）" {
+    const gpa = std.testing.allocator;
+    // `new` 后缺类名直达 eof：kw_new 消费后失败须回溯，错误恢复不得把 eof 越界推进
+    var a = try ast.Ast.parse(gpa, "<?php\nnew\n", testing.v85);
+    defer a.deinit(gpa);
+    try std.testing.expect(a.errors.len >= 1);
+    // `Foo::` 残缺静态访问直达 eof：后缀消费 `::` 后失败停在 eof，不越界
+    var b = try ast.Ast.parse(gpa, "<?php\nFoo::\n", testing.v85);
+    defer b.deinit(gpa);
+    _ = b.root;
+}
+
+test "expr :: new :: 类名缺失有诊断而非静默产出空节点" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php new ;", testing.v85);
+    defer tree.deinit(gpa);
+    try std.testing.expect(tree.errors.len >= 1);
+    try std.testing.expectEqual(@as(usize, 0), testing.countTag(tree, .expr_new));
+}
 
 test "expr :: 字面量 :: int/float/string 各自成节点" {
     const gpa = std.testing.allocator;
@@ -1112,7 +1545,7 @@ test "expr :: 属性访问与方法调用 :: -> 的两种形态" {
     var tree = try ast.Ast.parse(gpa, "<?php $o->p; $o->m();", testing.v84);
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
-    // 注意：`$o->m()` 的 callee 本身也是一次属性取回，故 expr_property_fetch 为 2
+    // `$o->m()` 的 callee 本身也是一次属性取回，故 expr_property_fetch 为 2
     // （与 PHP-Parser 的 MethodCall.var 为 PropertyFetch 一致）。
     try testing.expectTagCounts(tree, .{
         .expr_property_fetch = 2,
@@ -1231,6 +1664,98 @@ test "expr :: new :: 有括号/无括号/动态类名" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
     try testing.expectTagCounts(tree, .{ .expr_new = 3 });
+}
+
+test "expr :: new :: new_variable 类名（变量/下标/属性形态）" {
+    // 回归：`new $arr['c']()` 曾被错解为 `(new $arr)['c']()`。
+    // 类名引用应为整体 `$arr['c']`（PHP: class_name_reference → new_variable）。
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = new $cls;
+        \\$b = new $arr['c'];
+        \\$c = new $obj->prop;
+        \\$d = new $dict[$key]();
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // 4 个 new；变量下标 2 处（$arr['c']、$dict[$key]）；属性形态 1 处
+    try testing.expectTagCounts(tree, .{
+        .expr_new = 4,
+        .expr_array_dim_fetch = 2,
+        .expr_property_fetch = 1,
+    });
+}
+
+test "expr :: new :: new_variable 静态属性类名（对齐 uvs/new.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = new Test::$className;
+        \\$b = new $test::$className;
+        \\$c = new $weird[0]->foo::$className;
+        \\$d = new A::$A::$b;
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // 4 个 static_property_fetch；链式 A::$A::$b 是嵌套（各计 1）
+    try testing.expectTagCounts(tree, .{
+        .expr_new = 4,
+        .expr_static_property_fetch = 5,
+        .expr_array_dim_fetch = 1,
+        .expr_property_fetch = 1,
+    });
+}
+
+test "uvs :: 变量语法统一化（字符串/常量/链式调用解引用，对齐 php-parser uvs）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\"string"->length();
+        \\"foo{$bar}"[0];
+        \\A::B[0];
+        \\A::B::$c;
+        \\A[0];
+        \\id('var_dump')(1);
+        \\'id'('var_dump');
+        \\('i' . 'd')();
+        \\isset(([0, 1] + [])[0]);
+        \\isset(['a' => 'b']->a);
+        \\isset("str"->a);
+        \\'A'::$b;
+        \\('A' . '')::$b;
+        \\A::$A::$b;
+        \\$x instanceof ('Foo' . $bar);
+        \\__FUNCTION__[0];
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+}
+
+test "uvs :: global 非简单变量报错（对齐 uvs/globalNonSimpleVarError）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa, "<?php global $$foo->bar;", testing.v84);
+    defer tree.deinit(gpa);
+    // `global` 只接受简单变量；`$$foo->bar` 应被拒绝（收集式模型：errors 非空）
+    try std.testing.expect(tree.errors.len > 0);
+}
+
+test "expr :: new :: new_variable nullsafe 属性与括号表达式（8.0+）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$a = new $obj?->cls;
+        \\$b = new ('Foo' . $bar);
+        \\$c = new ('Foo' . $bar)($arg);
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // ?-> 属性 1、括号内 concat 2、new 3
+    try testing.expectTagCounts(tree, .{
+        .expr_new = 3,
+        .expr_nullsafe_property_fetch = 1,
+        .expr_binary = 2,
+    });
 }
 
 test "expr :: 三元 :: 完整形式与省略形式" {
@@ -1457,6 +1982,46 @@ test "expr :: 插值字符串 :: 双引号含变量与花括号表达式" {
     try std.testing.expect(testing.countTag(tree, .expr_string_part) >= 2);
 }
 
+test "expr :: heredoc :: flexible 缩进结束符与数组元素（对齐 flexibleDocString.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\$ary = [
+        \\    <<<FOO
+        \\Test
+        \\FOO,
+        \\    <<<'BAR'
+        \\    Test
+        \\    BAR,
+        \\];
+        \\<<<'END'
+        \\ END;
+        \\<<<END
+        \\
+        \\  END;
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_encapsed = 4 });
+}
+
+test "expr :: encapsed :: 变量偏移全形态（对齐 encapsedString/encapsedNegVarOffset.test）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\"$A[0x0]";
+        \\"$A[0b0]";
+        \\"$A[000]";
+        \\"$A[1234]";
+        \\"$A[$B]";
+        \\"{$$A}[B]";
+        \\b"$A";
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .expr_encapsed = 7, .expr_array_dim_fetch = 5 });
+}
+
 test "expr :: heredoc :: 启用插值" {
     const gpa = std.testing.allocator;
     var tree = try ast.Ast.parse(gpa,
@@ -1496,7 +2061,11 @@ test "expr :: 限定名 :: 完全限定形式" {
     var tree = try ast.Ast.parse(gpa, "<?php new \\Foo\\Bar();", testing.v84);
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
-    try testing.expectTagCounts(tree, .{ .name_fully_qualified = 1 });
+    try testing.expectTagCounts(tree, .{
+        .name_fully_qualified = 1,
+        // 回归：FQ 名曾只吃前导 `\`，Foo\Bar 残留被误当函数调用（func_call>0 即失败）
+        .expr_func_call = 0,
+    });
 }
 
 test "expr :: 限定名 :: 相对形式 namespace\\Foo" {

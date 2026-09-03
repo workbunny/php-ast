@@ -2,7 +2,9 @@
   (stmt_class `class` name=`Base`
     (name `Iface`)
     (stmt_class_const `const` name=`A`
-      (expr_int `1`)
+      (const_decl `A`
+        (expr_int `1`)
+      )
     )
     (stmt_property `$ro`
       (type_name `string`

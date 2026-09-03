@@ -1,13 +1,3 @@
-; 9 条诊断
-;   expected_token
-;   expected_expr
-;   expected_token
-;   expected_expr
-;   expected_token
-;   expected_expr
-;   expected_expr
-;   expected_expr
-;   expected_expr
 (root `<?php`
   (stmt_while `while`
     (expr_variable `$a`)
@@ -37,34 +27,23 @@
       (expr_variable `$i`)
       (expr_int `0`)
     )
-    (stmt_error `,`)
-  )
-  (stmt_expression `=`
     (expr_assign `=`
       (expr_variable `$j`)
       (expr_int `1`)
     )
-  )
-  (stmt_expression `<`
     (expr_binary `<`
       (expr_variable `$i`)
       (expr_int `10`)
     )
-  )
-  (stmt_expression `++`
     (expr_post_inc `++`
       (expr_variable `$i`)
     )
-  )
-  (stmt_error `,`)
-  (stmt_expression `--`
     (expr_post_dec `--`
       (expr_variable `$j`)
     )
-  )
-  (stmt_error `)`)
-  (stmt_block `{`
-    (stmt_continue `continue`)
+    (stmt_block `{`
+      (stmt_continue `continue`)
+    )
   )
   (stmt_foreach `foreach`
     (expr_variable `$list`)
@@ -81,6 +60,18 @@
     (expr_variable `$value`)
     (stmt_block `{`
       (stmt_break `break`)
+    )
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$gen`)
+    (expr_variable `$k`)
+    (expr_variable `$v`)
+    (stmt_block `{`
+      (stmt_expression `++`
+        (expr_post_inc `++`
+          (expr_variable `$v`)
+        )
+      )
     )
   )
 )

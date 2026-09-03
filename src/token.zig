@@ -93,7 +93,9 @@ pub const Token = struct {
         left_shift_equal,
         right_shift_equal,
         null_coalesce,
+        null_coalesce_equal,
         nullsafe_arrow,
+        dollar,
         caret,
         caret_equal,
         backtick,
@@ -166,6 +168,14 @@ pub const Token = struct {
         kw_insteadof,
         kw_halt_compiler,
         inline_html,
+
+        /// 该 token 是否为关键字。`kw_*` 在此枚举中连续（kw_if 至 kw_halt_compiler，
+        /// 之间无符号/标识符插入），故以区间判定——单点维护，新增关键字只需在
+        /// keyword 表对应区间内添加。
+        pub fn isKeyword(tag: Tag) bool {
+            const i = @intFromEnum(tag);
+            return i >= @intFromEnum(Tag.kw_if) and i <= @intFromEnum(Tag.kw_halt_compiler);
+        }
     };
 
     /// 关键字表：文本到 `Tag` 的完整映射，单点维护。
@@ -254,7 +264,9 @@ pub const Token = struct {
         .{ .t = "<<=", .tag = .left_shift_equal },
         .{ .t = "\\", .tag = .backslash },
         .{ .t = "<=>", .tag = .spaceship },
+        .{ .t = "??=", .tag = .null_coalesce_equal },
         .{ .t = "??", .tag = .null_coalesce },
+        .{ .t = "$", .tag = .dollar },
         .{ .t = "?->", .tag = .nullsafe_arrow },
         .{ .t = "<<", .tag = .left_shift },
         .{ .t = ">>", .tag = .right_shift },

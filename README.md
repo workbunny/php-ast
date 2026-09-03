@@ -25,8 +25,12 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 
 ## 文档
 
-- [doc/zen.md](doc/zen.md) — 设计哲学、特殊点总表、适用性边界
-- [doc/api.md](doc/api.md) — 公开 API 手册
+- [doc/zen.md](doc/zen.md) — 设计哲学：信息分层、特殊点总表（「语法特征 → AST」映射）、适用性边界
+- [doc/api.md](doc/api.md) — 公开 API 手册（含语义旁表与 compat 趋同层）
+- [doc/example.md](doc/example.md) — 与 php-parser 的用法趋同对照示例
+- [doc/special.md](doc/special.md) — 与 php-parser 的实现差异清单（归一、错误模型等）
+- [todo.md](todo.md) — 未完成项与批次排期
+- [skills.md](skills.md) — 库族通用约定：环境、缺陷处理铁律、注释规范
 
 ## 设计
 
@@ -45,7 +49,8 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
    Ast（结构数组：tokens / nodes / extra_data / errors）
       │
       ▼
-   消费方：自行 switch(nodeTag) 遍历（反向生成源码的 Render 为规划功能，当前未实现）
+   消费方：自行 switch(nodeTag) 遍历；反向生成源码的 PrettyPrinter（B5）为规划
+   子功能模块，见 todo.md「下一批」
 ```
 
 ### 架构思路
@@ -60,8 +65,10 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 
 ## 快速开始
 
-库以命名模块 `php_ast` 暴露，根 `src/root.zig` 再导出了 `ast` / `lexer` / `token` / `version`
-四个子模块，并提供了 `parse` / `Ast` 等顶层便捷别名。
+库以命名模块 `php_ast` 暴露，根 `src/root.zig` 再导出词法/语法/工具全部子模块
+（`ast` / `lexer` / `token` / `version` / `parser_*` / `walk` / `dump` / `project` /
+`name_resolver` / `parent_map` / `node_finder` / `compat`），并提供 `parse` / `loadDir` /
+`Ast` / `ProjectAst` 等顶层便捷别名。
 
 ```zig
 const std = @import("std");
@@ -116,10 +123,11 @@ zig build test
 
 ### 测试组织
 
-`test` 块就近写在被测源文件底部（Zig 标准库与生态的主流做法），而非集中于独立
+`test` 块就近写在被测源文件**尾部**（Zig 标准库与生态的主流做法），而非集中于独立
 `tests/` 目录。这样测试与实现同处一文件、便于对照阅读，且能覆盖文件内的私有函数。
-收集是自动的：`build.zig` 里 `b.addTest(.{ .root_module = lib_mod })` 会递归扫描依赖
-树中的全部 `test` 块，新增测试文件时**无需**改动 `build.zig`。
+Zig 对 `@import` 惰性分析，测试收集靠 `src/root.zig` 末尾的登记 `test { }` 强制引用
+各模块——**新增含 `test` 的模块必须在 root.zig 登记**，否则其测试被静默跳过
+（`zig test src/root.zig` 会报 `All 0 tests passed`）。
 
 | 机制               | 说明                                                                                                               |
 |--------------------|--------------------------------------------------------------------------------------------------------------------|
@@ -166,6 +174,11 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `src/parser_type.zig` | 类型级 `parse*`（可空/联合/交集/DNF/标识符/伪类型/泛型/数组后缀…）                                           |
 | `src/walk.zig`        | 遍历与注释：`childNodes`/`walk`/`walkStack`/`leadingComments`/`trailingComments`（子节点关系在 `ast.zig`）   |
 | `src/project.zig`     | 目录级能力：`loadDir` 扫描目录批量解析 `.php`，产物 `ProjectAst` 为多文件森林 + 跨文件顶层语句视图          |
+| `src/name_resolver.zig` | 名字解析旁表：`resolve`/`lookup`（对齐 php-parser NameResolver）                                            |
+| `src/parent_map.zig`  | 父链旁表：`build`/`parentOf`/`chainToRoot`                                                                   |
+| `src/node_finder.zig` | 谓词查找：`find`/`findTag`/`findFirst`/`findFirstTag`（短路）                                                 |
+| `src/compat.zig`      | php-parser 用法趋同层：`phpParserType`/位置六函数/`getDocComment`/`AttrMap`                                 |
+| `src/fixture_scan.zig`| A3 预扫描工具：对照 php-parser `.test` 报接受/拒绝差距（`zig test src/fixture_scan.zig`）                    |
 | `src/testing.zig`     | 共享测试断言工具（对应 `std.testing` 的项目级等价物）                                                        |
 | `src/coverage.zig`    | 覆盖矩阵，编译期强制每个 `Node.Tag` / `Token.Tag` 都有用例                                                   |
 | `src/dump.zig`        | AST 文本渲染，用于调试与黄金快照                                                                             |
@@ -175,7 +188,7 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 
 ### 节点覆盖
 
-节点分类以 PHP-Parser 5.8.0 为基准（约 170 个节点类（本库以约 110 个 AST `Tag` 表达，运算符子类型已折叠））。下表逐项列出支持情况。
+节点分类以 PHP-Parser 5.8.0 为基准（约 170 个节点类；本库以 118 个 AST `Tag` 表达，运算符子类型已折叠，对照见 `doc/zen.md`）。下表逐项列出支持情况。
 
 ##### 对比差异
 

@@ -91,9 +91,14 @@ pub const Parser = struct {
     }
 
     /// 取走当前 token 并把游标推进到下一位，返回被取走的 token。
+    ///
+    /// eof 是 token 流的结构性终点（末尾哨兵，恒为末位），对它的「消费」应停在原地：
+    /// 各解析函数在缺必需 token 时可能先消费分隔符再失败返回 null，若允许越过 eof，
+    /// 上层错误恢复会把越界下标读崩。停在 eof 让此类残留无害化——诊断已由
+    /// `expectToken`/`warn` 记录，AST 只是不再前进。
     pub fn nextToken(p: *Parser) TokenIndex {
         const ti = p.tok_i;
-        p.tok_i += 1;
+        if (p.tokens.items(.tag)[ti] != .eof) p.tok_i += 1;
         return ti;
     }
 

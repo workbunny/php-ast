@@ -83,6 +83,37 @@ pub const Lexer = struct {
             const c = source[i];
             const literal_mode = in_string and interp_depth == 0 and bracket_depth == 0;
 
+            // heredoc / nowdoc 行终止检测必须发生在行首（含行首空白被吞之前）：
+            // 行首恰好是 `LABEL`（允许前置缩进，PHP 7.3 flexible）且后接允许符即结束。
+            // 此前检测放在字面量分支内，行首空白在空白分支被 continue 吞掉，带缩进的
+            // 结束符永不命中 → flexible heredoc 整块缺失。
+            if (is_heredoc and (i == 0 or source[i - 1] == '\n')) {
+                var k = i;
+                while (k < n and (source[k] == ' ' or source[k] == '\t')) : (k += 1) {}
+                if (k + heredoc_label.len <= n) {
+                    const cand = source[k .. k + heredoc_label.len];
+                    if (std.mem.eql(u8, cand, heredoc_label)) {
+                        const term_end = k + heredoc_label.len;
+                        const after = if (term_end < n) source[term_end] else '\n';
+                        // PHP 7.3 flexible heredoc：终止标签后可继续表达式上下文，
+                        // 标签后允许 `;` 及 `,` `)` `]` `}` `(` 等接续符（数组元素、
+                        // 函数实参、[] 下标等场景：`[<<<FOO\nx\nFOO,]`）。
+                        if (after == '\n' or after == '\r' or after == ';' or
+                            after == ' ' or after == '\t' or after == ',' or
+                            after == ')' or after == ']' or after == '}' or
+                            after == '(' or term_end == n)
+                        {
+                            try flushPart.run(&part_start, k, gpa, out);
+                            try out.append(gpa, .{ .tag = .string_end, .start = k, .end = term_end });
+                            in_string = false;
+                            is_heredoc = false;
+                            i = term_end - 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // 空白：字符串字面量模式下累积为片段，否则直接跳过。
             if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
                 if (literal_mode and part_start == null) part_start = i;
@@ -91,32 +122,6 @@ pub const Lexer = struct {
 
             // ===== 字符串字面量累积模式 =====
             if (literal_mode) {
-                // heredoc / nowdoc 终止行：行首出现 `LABEL`（后可接 `;`/空白/换行）。
-                if (is_heredoc) {
-                    const at_line_start = (i == 0 or source[i - 1] == '\n');
-                    if (at_line_start) {
-                        var k = i;
-                        while (k < n and (source[k] == ' ' or source[k] == '\t')) : (k += 1) {}
-                        if (k + heredoc_label.len <= n) {
-                            const cand = source[k .. k + heredoc_label.len];
-                            if (std.mem.eql(u8, cand, heredoc_label)) {
-                                const term_end = k + heredoc_label.len;
-                                const after = if (term_end < n) source[term_end] else '\n';
-                                if (after == '\n' or after == '\r' or after == ';' or
-                                    after == ' ' or after == '\t' or term_end == n)
-                                {
-                                    try flushPart.run(&part_start, k, gpa, out);
-                                    try out.append(gpa, .{ .tag = .string_end, .start = k, .end = term_end });
-                                    in_string = false;
-                                    is_heredoc = false;
-                                    i = term_end - 1;
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // 双引号结束
                 if (!is_heredoc and c == '"') {
                     try flushPart.run(&part_start, i, gpa, out);
@@ -370,16 +375,68 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // 整型 / 浮点字面量
+            // 整型 / 浮点字面量（PHP 全形态：0x 十六 / 0b 二 / 0o 八进制前缀、
+            // 十进制与浮点（含指数）、`_` 数字分隔符）。此前只扫十进制，`0x0` 被拆成
+            // `0` + 残留 `x0`（encapsedString/encapsedNegVarOffset fixture 的 expected_token）。
             if (isDigitChar(c)) {
                 var e = i + 1;
                 var is_float = false;
+
+                // 前缀整数：0x / 0b / 0o（后必须跟至少一个合法位，否则退回十进制 `0`）
+                if (c == '0' and e < n) {
+                    const bc = source[e];
+                    const is_hex = bc == 'x' or bc == 'X';
+                    const is_bin = bc == 'b' or bc == 'B';
+                    const is_oct = bc == 'o' or bc == 'O';
+                    if (is_hex or is_bin or is_oct) {
+                        const legal = struct {
+                            fn l(ch: u8, hex: bool, bin: bool) bool {
+                                return if (hex)
+                                    isDigitChar(ch) or (ch >= 'a' and ch <= 'f') or (ch >= 'A' and ch <= 'F')
+                                else if (bin) ch == '0' or ch == '1'
+                                else ch >= '0' and ch <= '7'; // 八进制
+                            }
+                        }.l;
+                        const t = e + 1;
+                        if (t < n and legal(source[t], is_hex, is_bin)) {
+                            e = t;
+                            while (e < n) : (e += 1) {
+                                const ch = source[e];
+                                if (ch == '_') continue;
+                                if (!legal(ch, is_hex, is_bin)) break;
+                            }
+                            try out.append(gpa, .{ .tag = .int_literal, .start = i, .end = e });
+                            i = e - 1;
+                            continue;
+                        }
+                        // 0x 后无合法位：退回，仅把 `0` 作为整数（`x` 走标识符等后续扫描）
+                        e = i + 1;
+                    }
+                }
+
+                // 十进制：整数/浮点（`.` 与 `e` 指数）
                 while (e < n) : (e += 1) {
                     const ch = source[e];
-                    if (isDigitChar(ch)) continue;
+                    if (isDigitChar(ch) or ch == '_') continue;
                     if (ch == '.' and !is_float) {
                         is_float = true;
                         continue;
+                    }
+                    if ((ch == 'e' or ch == 'E') and !is_float) {
+                        // 指数须后跟数字或符号+数字，否则 `e` 是标识符前缀
+                        if (e + 1 < n and isDigitChar(source[e + 1])) {
+                            e += 1;
+                            is_float = true;
+                            continue;
+                        }
+                        if (e + 2 < n and (source[e + 1] == '+' or source[e + 1] == '-') and
+                            isDigitChar(source[e + 2]))
+                        {
+                            e += 2;
+                            is_float = true;
+                            continue;
+                        }
+                        break;
                     }
                     break;
                 }

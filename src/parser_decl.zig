@@ -35,6 +35,9 @@ pub const TypeDeclComponents = struct {
     name: TokenIndex,
     attrs: SubRange,
     backing: OptionalIndex,
+    /// interface → extends 名字列表；enum → implements 名字列表；trait → 空。
+    /// 语义由所属 tag（stmt_interface/stmt_enum）决定。
+    ext_impl: SubRange,
     stmts: SubRange,
     flags: u32,
 };
@@ -62,7 +65,8 @@ pub const ClassComponents = struct {
     name: TokenIndex,
     attrs: SubRange,
     extends: OptionalIndex,
-    implements: OptionalIndex,
+    /// implements 名字列表（`class A implements B, C`，可多个）。
+    implements: SubRange,
     stmts: SubRange,
     flags: u32,
 };
@@ -73,13 +77,17 @@ pub const FunctionComponents = struct {
     params: SubRange,
     ret: OptionalIndex,
     body: OptionalIndex,
+    /// 引用返回 `function &name(...)`（Function_.byRef）。
+    by_ref: bool,
 };
 
 pub const ParamComponents = struct {
     name: TokenIndex,
-    flags: u32,
+    flags: u32, // 1=abstract 2=final 4=static 8=readonly（参数位不使用）
     promoted: u32, // 构造器属性提升可见性：0=非提升 1=public 2=protected 3=private
     variadic: bool, // 可变参数 `...$x`
+    /// 引用参数 `&$x`（Param.byRef，可叠加变长：`&...$x`）。
+    by_ref: bool,
     type: OptionalIndex,
     default: OptionalIndex,
     attrs: SubRange,
@@ -103,11 +111,14 @@ pub const MethodComponents = struct {
 };
 
 /// 类常量（Stmt\ClassConst）：可见性、类型（PHP 8.3 起支持）与初值。
+///
+/// 一项声明可含多个常量（`const A = 1, B = 2`），对齐 php-parser `consts: array`——
+/// 各项与顶层 const 同构为 `.const_decl` 子节点（`name = value`，name 可为关键字：
+/// semiReserved 的 `const TRAIT = 3`）。
 pub const ClassConstComponents = struct {
-    name: TokenIndex,
     type: OptionalIndex,
     flags: u32, // 可见性：0=public 1=protected 2=private
-    value: OptionalIndex,
+    decls: SubRange,
     attrs: SubRange,
     /// 声明结尾的 `;`。
     semi: TokenIndex,
@@ -117,6 +128,12 @@ pub const ClassConstComponents = struct {
 /// 无体时以 `;` 结束（前向声明 / 接口方法）。
 pub fn parseFunction(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     const kw = p.nextToken();
+    // 引用返回：`function &name(...)`（顶层函数返回引用，与方法 parseMethod 同款）
+    var by_ref = false;
+    if (p.tokTag() == .ampersand) {
+        _ = p.nextToken();
+        by_ref = true;
+    }
     const name_tok = p.nextToken();
     const plr = (try parseParamList(p)) orelse return null;
     var ret: OptionalIndex = .none;
@@ -138,6 +155,7 @@ pub fn parseFunction(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         .params = plr,
         .ret = ret,
         .body = body,
+        .by_ref = by_ref,
     });
     return (try p.addNode(.{
         .tag = .stmt_function,
@@ -178,14 +196,17 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         const ty = (try types.parseType(p)) orelse return null;
         type_opt = OptionalIndex.fromIndex(ty);
     }
+    // 引用符号在前、变长省略号在后：`Type &...$x`（引用可变参数）。顺序不可调换——
+    // 调换后 `&...` 的 `&` 会先被吃掉，剩余 `...` 在 variable 处误报 expected_variable。
+    var by_ref = false;
+    if (p.tokTag() == .ampersand) {
+        _ = p.nextToken();
+        by_ref = true;
+    }
     var variadic = false;
     if (p.tokTag() == .ellipsis) {
         _ = p.nextToken();
         variadic = true;
-    }
-    if (p.tokTag() == .ampersand) {
-        flags |= 16;
-        _ = p.nextToken();
     }
     if (p.tokTag() != .variable) {
         p.warn(ast.Error.Tag.expected_variable);
@@ -198,7 +219,7 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         const d = (try expr.parseExpr(p)) orelse return null;
         def = OptionalIndex.fromIndex(d);
     }
-    const extra = try p.addExtra(ParamComponents{ .name = var_tok, .flags = flags, .promoted = promoted, .variadic = variadic, .type = type_opt, .default = def, .attrs = attrs });
+    const extra = try p.addExtra(ParamComponents{ .name = var_tok, .flags = flags, .promoted = promoted, .variadic = variadic, .by_ref = by_ref, .type = type_opt, .default = def, .attrs = attrs });
     const node = (try p.addNode(.{
         .tag = .param,
         .main_token = var_tok,
@@ -220,15 +241,20 @@ pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         const en = (try expr.parseName(p)) orelse return null;
         extends = OptionalIndex.fromIndex(en);
     }
-    var impl: OptionalIndex = .none;
+    var impl: SubRange = p.emptySubRange();
     if (p.tokTag() == .kw_implements) {
         _ = p.nextToken();
+        var impls: std.ArrayList(Index) = .empty;
+        defer impls.deinit(p.gpa);
         const im = (try expr.parseName(p)) orelse return null;
-        impl = OptionalIndex.fromIndex(im);
+        try impls.append(p.gpa, im);
         while (p.tokTag() == .comma) {
             _ = p.nextToken();
-            _ = (try expr.parseName(p)) orelse return null;
+            const more = (try expr.parseName(p)) orelse return null;
+            try impls.append(p.gpa, more);
         }
+        const ilr = try p.addNodeList(impls.items);
+        impl = .{ .start = ilr.start, .end = ilr.end };
     }
     _ = p.expectToken(.lbrace);
     var stmts = try std.ArrayList(Index).initCapacity(p.gpa, 0);
@@ -309,15 +335,20 @@ pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         const e = (try expr.parseName(p)) orelse return null;
         extends = OptionalIndex.fromIndex(e);
     }
-    var impl: OptionalIndex = .none;
+    var impl: SubRange = p.emptySubRange();
     if (p.tokTag() == .kw_implements) {
         _ = p.nextToken();
+        var impls: std.ArrayList(Index) = .empty;
+        defer impls.deinit(p.gpa);
         const im = (try expr.parseName(p)) orelse return null;
-        impl = OptionalIndex.fromIndex(im);
+        try impls.append(p.gpa, im);
         while (p.tokTag() == .comma) {
             _ = p.nextToken();
-            _ = (try expr.parseName(p)) orelse return null;
+            const more = (try expr.parseName(p)) orelse return null;
+            try impls.append(p.gpa, more);
         }
+        const ilr = try p.addNodeList(impls.items);
+        impl = .{ .start = ilr.start, .end = ilr.end };
     }
     if (p.tokTag() != .lbrace) {
         p.warn(ast.Error.Tag.expected_token);
@@ -354,6 +385,14 @@ pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
 
 /// 解析类体成员：按首 token 分流到 trait use / 方法 / 常量 / 属性。
 pub fn parseClassMember(p: *Parser) ast.ParseError!?Index {
+    // 类体内的注释/文档注释不建节点（注释驻 token 流，`docCommentBefore` 仍可取回），
+    // 先跳过，否则 `}` 前/成员间的注释会被当作成员起始解析（如 `// my comment` 报
+    // expected_variable）。对齐 php-parser 把纯注释留白、不产成员的处理。
+    while (p.tokTag() == .comment or p.tokTag() == .doc_comment) {
+        _ = p.nextToken();
+    }
+    // 注释后即类体结束：返回 null 让调用方循环收尾（吃 `}` 退出），不按成员解析。
+    if (p.tokTag() == .rbrace or p.tokTag() == .eof) return null;
     var attrs = p.emptySubRange();
     if (p.tokTag() == .hash) attrs = try parseAttrGroups(p);
     const mods = parsePropertyModifiers(p);
@@ -529,32 +568,48 @@ pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
 /// 与属性节点（stmt_property）区分，对齐 php-parser 的 `Stmt\ClassConst`。
 pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseError!?Index {
     const kw = p.nextToken();
-    const name_tok = p.nextToken();
     var type_opt: OptionalIndex = .none;
     if (p.tokTag() == .colon) {
         _ = p.nextToken();
         const ty = (try types.parseType(p)) orelse return null;
         type_opt = OptionalIndex.fromIndex(ty);
     }
-    if (p.tokTag() != .equals) {
-        p.warn(ast.Error.Tag.expected_token);
-        return null;
+    // 常量列表：`const NAME = value, NAME2 = value2;`（每项 const_decl，与顶层 const 同构）。
+    var decls = try std.ArrayList(Index).initCapacity(p.gpa, 0);
+    defer decls.deinit(p.gpa);
+    while (true) {
+        // 常量名：标识符或关键字均可（semiReserved：`const TRAIT = 3`）。
+        const name_tok = p.nextToken();
+        _ = p.eatToken(.equals) orelse {
+            p.warn(ast.Error.Tag.expected_token);
+            return null;
+        };
+        const value = (try expr.parseExpr(p)) orelse return null;
+        const item = (try p.addNode(.{
+            .tag = .const_decl,
+            .main_token = name_tok,
+            .data = .{ .node_and_token = .{ value, name_tok } },
+        })) orelse unreachable;
+        try decls.append(p.gpa, item);
+        if (p.tokTag() == .comma) {
+            _ = p.nextToken();
+            continue;
+        }
+        break;
     }
-    _ = p.nextToken();
-    const value = (try expr.parseExpr(p)) orelse return null;
-    const semi = (p.eatToken(.semicolon)) orelse name_tok;
+    const semi = (p.eatToken(.semicolon)) orelse kw;
+    const lr = try p.addNodeList(decls.items);
     const extra = try p.addExtra(ClassConstComponents{
-        .name = name_tok,
         .type = type_opt,
         .flags = visibility,
-        .value = OptionalIndex.fromIndex(value),
+        .decls = .{ .start = lr.start, .end = lr.end },
         .semi = semi,
         .attrs = attrs,
     });
     const node = (try p.addNode(.{
         .tag = .stmt_class_const,
         .main_token = kw,
-        .data = .{ .extra_and_opt_node = .{ extra, OptionalIndex.fromIndex(value) } },
+        .data = .{ .extra_and_opt_node = .{ extra, type_opt } },
     })) orelse unreachable;
     // 常量上的注解（含 #[\Deprecated]）为 8.5 引入
     if (attrs.start != attrs.end) {
@@ -573,12 +628,24 @@ pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.Pa
         const bt = (try types.parseType(p)) orelse return null;
         backing = OptionalIndex.fromIndex(bt);
     }
-    while (p.tokTag() == .kw_extends or p.tokTag() == .kw_implements) {
-        _ = p.nextToken();
-        _ = (try expr.parseName(p)) orelse return null;
-        while (p.tokTag() == .comma) {
+    // interface → extends 列表；enum → implements 列表；trait 两者皆无。
+    var ext_impl: SubRange = p.emptySubRange();
+    if (tag == .stmt_interface or tag == .stmt_enum) {
+        var names: std.ArrayList(Index) = .empty;
+        defer names.deinit(p.gpa);
+        while (p.tokTag() == .kw_extends or p.tokTag() == .kw_implements) {
             _ = p.nextToken();
-            _ = (try expr.parseName(p)) orelse return null;
+            const n = (try expr.parseName(p)) orelse return null;
+            try names.append(p.gpa, n);
+            while (p.tokTag() == .comma) {
+                _ = p.nextToken();
+                const more = (try expr.parseName(p)) orelse return null;
+                try names.append(p.gpa, more);
+            }
+        }
+        if (names.items.len > 0) {
+            const nr = try p.addNodeList(names.items);
+            ext_impl = .{ .start = nr.start, .end = nr.end };
         }
     }
     _ = p.expectToken(.lbrace);
@@ -611,6 +678,7 @@ pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.Pa
         .name = name_tok,
         .attrs = attrs,
         .backing = backing,
+        .ext_impl = ext_impl,
         .stmts = .{ .start = lr.start, .end = lr.end },
         .flags = 0,
     });
@@ -720,6 +788,18 @@ test "decl :: 顶层函数 :: 参数与返回值成节点" {
     try testing.expectTagCounts(tree, .{ .stmt_function = 1, .param = 1 });
     try std.testing.expectEqual(@as(usize, 1), tree.rootStmts().len);
     try std.testing.expectEqual(.stmt_function, tree.nodeTag(tree.rootStmts()[0]));
+}
+
+test "decl :: 函数 :: 引用返回 function &foo 与 by-ref 参数 &...$x" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function &ref1($a) { return $a; }
+        \\function ref2(&$a, Type &...$rest) { }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_function = 2, .param = 3 });
 }
 
 test "decl :: 类 :: 继承与方法分别成节点" {

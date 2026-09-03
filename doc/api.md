@@ -7,10 +7,12 @@ const php_ast = @import("php_ast");
 ```
 
 各子模块以同名命名空间再导出，可按 `php_ast.ast` / `php_ast.walk` / `php_ast.project`
-/ `php_ast.token` / `php_ast.lexer` / `php_ast.version` / `php_ast.dump` 访问。
-`root.zig` 同时再导出顶层便捷别名 `php_ast.parse`、`php_ast.loadDir`、`php_ast.Ast`、
-`php_ast.ProjectAst`、`php_ast.ParseError`、`php_ast.Node`、`php_ast.PhpVersion`、
-`php_ast.Token`。其余类型（如 `Index`、`ByteOffset`）经 `php_ast.ast.Index` 等子模块路径访问。
+/ `php_ast.token` / `php_ast.lexer` / `php_ast.version` / `php_ast.dump` /
+`php_ast.name_resolver` / `php_ast.parent_map` / `php_ast.node_finder` / `php_ast.compat`
+访问。`root.zig` 同时再导出顶层便捷别名 `php_ast.parse`、`php_ast.loadDir`、
+`php_ast.Ast`、`php_ast.ProjectAst`、`php_ast.ParseError`、`php_ast.Node`、
+`php_ast.PhpVersion`、`php_ast.Token`。其余类型（如 `Index`、`ByteOffset`）经
+`php_ast.ast.Index` 等子模块路径访问。
 
 ---
 
@@ -21,10 +23,12 @@ const php_ast = @import("php_ast");
 3. [Ast：解析结果与访问 API](#3-ast-解析结果与访问-api)
 4. [walk：树遍历与注释](#4-walk-树遍历与注释)
 5. [project：目录加载](#5-project-目录加载)
-6. [token：词法单元](#6-token-词法单元)
-7. [lexer：词法分析](#7-lexer-词法分析)
-8. [version：PHP 版本谓词](#8-version-php-版本信息与门控)
-9. [dump：AST 文本渲染](#9-dump-ast-文本渲染)
+6. [语义旁表：name_resolver / parent_map / node_finder](#6-语义旁表name_resolver--parent_map--node_finder)
+7. [compat：用法趋同层](#7-compat用法趋同层)
+8. [token：词法单元](#8-token-词法单元)
+9. [lexer：词法分析](#9-lexer-词法分析)
+10. [version：PHP 版本信息与门控](#10-versionphp-版本信息与门控)
+11. [dump：AST 文本渲染](#11-dumpast-文本渲染)
 
 ---
 
@@ -447,7 +451,116 @@ pub fn rootStmts(self: ProjectAst) []const TopStmt             // 跨文件顶�
 
 ---
 
-## 6. token：词法单元
+## 6. 语义旁表：name_resolver / parent_map / node_finder
+
+SoA 节点定长、token 流固定，凡需"挂到节点上"的语义结果都以**旁表**承载（构建一次、
+查询任意次）。三个模块分别提供名字解析、父链、便捷查找——它们是符号分析/树变换的
+地基（对应 php-parser 的 NameResolver / ParentConnectingVisitor / find 工具）。
+
+### `name_resolver.resolve` —— 名字解析
+
+```zig
+pub fn resolve(tree: Ast, gpa: std.mem.Allocator, strict: bool) !Resolution
+```
+
+**简介**：把 `use` 别名与当前命名空间应用到全树的名字引用，解析为完全限定名。
+产出 `Resolution` 旁表（被解析名字节点 → FQN 文本），`lookup(node)` 查询。
+
+- 特殊类名 `self`/`parent`/`static`、常量 `true`/`false`/`null`：保留不解析；
+- 仅解析 `.name`（相对名）——`name_fully_qualified` 已 FQ、`name_relative` 语义固定、
+  `name_var_like` 非名字，均跳过；
+- `strict`：函数/常量 unqualified 且处于命名空间内时不产结果（同 php-parser
+  "cannot resolve statically"），false 时给命名空间前缀版本。
+
+```zig
+var res = try php_ast.name_resolver.resolve(tree, gpa, true);
+defer res.deinit();
+// 遍历时对任一名字节点问解析结果
+if (res.lookup(name_node)) |fqn| { /* "App\\Ns\\Foo"（无前导 \） */ }
+```
+
+### `parent_map.build` —— 父链
+
+```zig
+pub fn build(gpa: std.mem.Allocator, tree: Ast, root: Index) !ParentMap
+// ParentMap:
+pub fn parentOf(self: ParentMap, node: Index) ?Index       // root 返回 null
+pub fn chainToRoot(self: ParentMap, node: Index, out: *std.ArrayList(Index)) !void
+```
+
+**简介**：构建整树父链映射（node → parent）。`chainToRoot` 从 `node` 沿父链上溯至根，
+`out` 依序收到 node, parent, …, root。适合"先建索引再多次反查"的分析。
+
+### `node_finder` —— 谓词查找
+
+```zig
+pub fn find(gpa, tree, root, ctx, comptime pred, out: *ArrayList(Index)) !void  // 全收集
+pub fn findTag(gpa, tree, root, wanted: Node.Tag, out) !void                     // tag 过滤
+pub fn findFirst(gpa, tree, root, ctx, comptime pred) !?Index                    // 短路命中即停
+pub fn findFirstTag(gpa, tree, root, wanted: Node.Tag) !?Index
+```
+
+**简介**：按谓词收集/短路查找节点。`findFirst*` 命中即停（手写栈），适合「找某类第一
+个节点」。`pred(ctx, tree, node) bool` 返回 bool（非 error），可直接做 tag/条件过滤。
+
+---
+
+## 7. compat：用法趋同层
+
+把 SoA 查询包装成 php-parser 高频用法相近的形态（结构可异、用法趋同，见
+`doc/example.md`）。全部为纯函数 / 旁表，不改 AST、无隐藏分配。
+
+### `phpParserType`
+
+```zig
+pub fn phpParserType(tag: Node.Tag) []const u8
+```
+
+**简介**：tag → php-parser 风格类型名字符串（`"Stmt_If"`、`"Expr_New"`），零分配，
+供日志/调试与 php-parser 对照。运算符子类型已折叠不展开（`expr_binary` + 运算符 token，
+见 `doc/special.md` P1）。
+
+### 位置便捷（B11）
+
+```zig
+pub fn startLine(tree: Ast, node: Index) usize      // 1 基
+pub fn endLine(tree: Ast, node: Index) usize
+pub fn startFilePos(tree: Ast, node: Index) usize   // 字节偏移
+pub fn endFilePos(tree: Ast, node: Index) usize     // 末字节之后
+pub fn startTokenPos(tree: Ast, node: Index) usize
+pub fn endTokenPos(tree: Ast, node: Index) usize
+```
+
+**简介**：由 `main_token` 派生、语义对齐 php-parser 位置属性（行 1 基、`endFilePos`
+为末字节之后）。
+
+### `getDocComment`（B12）
+
+```zig
+pub fn getDocComment(tree: Ast, gpa: std.mem.Allocator, node: Index) !?[]u8
+```
+
+**简介**：取紧贴节点前的 docblock 文本（无则 null）；非 docblock 的普通注释不返回。
+返回切片在 `gpa` 上分配，调用方释放。
+
+### `AttrMap`（B10）
+
+```zig
+pub const AttrMap = struct {
+    pub fn init(gpa: std.mem.Allocator) AttrMap
+    pub fn deinit(self: *AttrMap) void
+    pub fn set(self: *AttrMap, node: Index, key: []const u8, value: []const u8) !void
+    pub fn get(self: AttrMap, node: Index, key: []const u8) ?[]const u8
+};
+```
+
+**简介**：节点 → 任意键值的旁表（对齐 php-parser `setAttribute`/`getAttribute`；SoA
+节点定长无法内嵌属性）。键值在 `gpa` 上分配、`deinit` 统一释放；`set` 覆盖同名键仅
+替换 value 不泄漏。
+
+---
+
+## 8. token：词法单元
 
 ```zig
 const php_ast.token = @import("token.zig");
@@ -510,7 +623,7 @@ if (php_ast.token.Token.isComment(tree.tokenTag(i))) { /* 是注释 */ }
 
 ---
 
-## 6. lexer：词法分析
+## 9. lexer：词法分析
 
 ```zig
 const php_ast.lexer = @import("lexer.zig");
@@ -544,7 +657,7 @@ for (tokens.items(.tag)) |tag| { /* ... */ }
 
 ---
 
-## 7. version：PHP 版本信息与门控
+## 10. version：PHP 版本信息与门控
 
 ```zig
 const php_ast.version = @import("version.zig");
@@ -647,7 +760,7 @@ pub fn main() !void {
 
 ---
 
-## 8. dump：AST 文本渲染
+## 11. dump：AST 文本渲染
 
 ```zig
 const php_ast.dump = @import("dump.zig");

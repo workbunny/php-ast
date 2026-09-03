@@ -38,11 +38,12 @@ pub const WhileComponents = struct {
     body: Index,
 };
 
-/// `for` 的三段均可省略（`for (;;)`），故 init/cond/inc 为可选。
+/// `for` 的三段均可省略（`for (;;)`），且每段是逗号分隔的表达式列表
+/// （`for ($i = 0, $j = 1; ...; $i++, $j--)`），故 init/cond/inc 为子节点列表。
 pub const ForComponents = struct {
-    init: OptionalIndex,
-    cond: OptionalIndex,
-    inc: OptionalIndex,
+    init: SubRange,
+    cond: SubRange,
+    inc: SubRange,
     body: Index,
 };
 
@@ -51,6 +52,8 @@ pub const ForeachComponents = struct {
     key: OptionalIndex,
     value: Index,
     body: Index,
+    /// 值按引用遍历 `as &$v` / `as $k => &$v`（Foreach_.byRef，键不可引用）。
+    value_by_ref: bool,
 };
 
 pub const NamespaceComponents = struct {
@@ -93,6 +96,28 @@ fn isVisibility(tag: Token.Tag) bool {
     return tag == .kw_public or tag == .kw_protected or tag == .kw_private;
 }
 
+/// 判断顶层 `function` / `static function` 起始的语句是否为闭包表达式（无名字函数）。
+/// 调用时游标停在起始关键字上（`at_static=false` 停在 function，否则停在 static），
+/// 不修改游标。
+fn isClosureAhead(p: *Parser, at_static: bool) bool {
+    const save = p.tok_i;
+    _ = p.nextToken(); // function 或 static
+    if (at_static) {
+        if (p.tokTag() != .kw_function) {
+            p.tok_i = save;
+            return false;
+        }
+        _ = p.nextToken(); // function
+    }
+    // 闭包特征：function 后直接 `(`，或 `&(`（按引用返回的闭包）。
+    const is_closure = p.tokTag() == .lparen or (p.tokTag() == .ampersand and blk: {
+        _ = p.nextToken();
+        break :blk p.tokTag() == .lparen;
+    });
+    p.tok_i = save;
+    return is_closure;
+}
+
 /// 语句解析总入口：按首 token 分派到具体 parse*；跳过 open/close_tag、注释、
 /// InlineHTML 等包裹性 token。裸 `;` 产出 `Stmt\Nop`；无法识别的 token 产出
 /// `Stmt\Error`；返回 null 仅用于 eof / 右花括号等结构性边界。
@@ -121,12 +146,26 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
         // 裸块 `{ ... }`：`if`/`while`/`for`/`foreach` 的循环体走本函数解析，
         // 缺少此分支时块体会被当作表达式语句，产出 expected_expr。
         .lbrace => return parseBlock(p),
-        .kw_function => return decl.parseFunction(p, try decl.parseAttrGroups(p)),
+        .kw_function => {
+            // 顶层 `function(...)` / `function &(...)`（无名字）是闭包表达式语句，
+            // 非命名函数声明（后者必带名字）。前瞻区分后交表达式路径解析。
+            if (isClosureAhead(p, false)) return parseExprStatement(p);
+            return decl.parseFunction(p, try decl.parseAttrGroups(p));
+        },
         .kw_class => return decl.parseClass(p, try decl.parseAttrGroups(p)),
         .kw_enum => return decl.parseTypeDecl(p, .stmt_enum, try decl.parseAttrGroups(p)),
         .kw_interface => return decl.parseTypeDecl(p, .stmt_interface, try decl.parseAttrGroups(p)),
         .kw_trait => return decl.parseTypeDecl(p, .stmt_trait, try decl.parseAttrGroups(p)),
-        .kw_namespace => return parseNamespace(p),
+        .kw_namespace => {
+            // `namespace\fn\use()`（relative 名调用/常量）vs `namespace fn { }`（声明）。
+            // 前瞻：namespace 后跟 `\` 是表达式（相对名），否则是声明语句。
+            const save = p.tok_i;
+            _ = p.nextToken();
+            const is_rel = p.tokTag() == .backslash;
+            p.tok_i = save;
+            if (is_rel) return parseExprStatement(p);
+            return parseNamespace(p);
+        },
         .kw_return => return parseReturn(p),
         .kw_echo => return parseEcho(p),
         .kw_do => return parseDo(p),
@@ -139,7 +178,11 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
         .kw_declare => return parseDeclare(p),
         .kw_goto => return parseGoto(p),
         .kw_global => return parseGlobal(p),
-        .kw_static => return parseStatic(p),
+        .kw_static => {
+            // `static function(){}`（无名字）= 静态闭包表达式，非静态变量声明。
+            if (isClosureAhead(p, true)) return parseExprStatement(p);
+            return parseStatic(p);
+        },
         .kw_unset => return parseUnset(p),
         .hash => {
             const attrs = try decl.parseAttrGroups(p);
@@ -196,6 +239,9 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
             if (e == null) {
                 // parseExpr 未能消费当前 token（该 token 不能作表达式起始），必须先前进游标，
                 // 否则 parseRoot 的主循环会原地重复产出错误节点、不断追加 stmt_error 直至内存耗尽。
+                // eof/rbrace 是结构性边界（主循环以 eof 退出），不可再推进；此处直接返回
+                // null 让调用方收尾，诊断已在 parseExpr 内记过。
+                if (p.tokTag() == .eof or p.tokTag() == .rbrace) return null;
                 _ = p.nextToken();
                 return (try p.addNode(.{
                     .tag = .stmt_error,
@@ -302,23 +348,24 @@ pub fn parseWhile(p: *Parser) ast.ParseError!?Index {
     })) orelse unreachable;
 }
 
-/// for 循环：`for (init; cond; inc) body`。
+/// for 循环：`for (init; cond; inc) body`。每段为逗号分隔的表达式列表，
+/// 可整体省略：`for (;;)`。原实现各段只取单个表达式，遇 `$i = 0, $j = 1` 多
+/// 初始表达式即在 `,` 处报 expected_token——对齐 php-parser `Stmt\For` 的
+/// init/cond/loop 均为数组。
 pub fn parseFor(p: *Parser) ast.ParseError!?Index {
     const kw = p.nextToken();
     _ = p.expectToken(.lparen);
-    // 三段均可为空：`for (;;)`。先判分隔符再决定是否解析，避免把 `;` 当表达式起点
-    // 而产出 expected_expr。第三段后紧跟 `)`，故以 `)` 判空。
-    const init = if (p.tokTag() == .semicolon) null else (try expr.parseExpr(p));
+    const init = try parseForSection(p, .semicolon);
     _ = p.expectToken(.semicolon);
-    const cond = if (p.tokTag() == .semicolon) null else (try expr.parseExpr(p));
+    const cond = try parseForSection(p, .semicolon);
     _ = p.expectToken(.semicolon);
-    const inc = if (p.tokTag() == .rparen) null else (try expr.parseExpr(p));
+    const inc = try parseForSection(p, .rparen);
     _ = p.expectToken(.rparen);
     const body = (try parseStatement(p)) orelse return null;
     const extra = try p.addExtra(ForComponents{
-        .init = if (init) |n| OptionalIndex.fromIndex(n) else .none,
-        .cond = if (cond) |n| OptionalIndex.fromIndex(n) else .none,
-        .inc = if (inc) |n| OptionalIndex.fromIndex(n) else .none,
+        .init = init,
+        .cond = cond,
+        .inc = inc,
         .body = body,
     });
     return (try p.addNode(.{
@@ -326,6 +373,25 @@ pub fn parseFor(p: *Parser) ast.ParseError!?Index {
         .main_token = kw,
         .data = .{ .extra_and_node = .{ extra, body } },
     })) orelse unreachable;
+}
+
+/// 收集 for 段内逗号分隔的表达式列表，至 `term`（不含）为止；段空（`for (;;)` 或
+/// 立即遇分隔符）返回空范围。解析失败返回空范围，让调用方在分隔符处报期望错。
+fn parseForSection(p: *Parser, term: Token.Tag) ast.ParseError!SubRange {
+    var list = try std.ArrayList(Index).initCapacity(p.gpa, 0);
+    defer list.deinit(p.gpa);
+    while (p.tokTag() != term and p.tokTag() != .eof) {
+        const e = (try expr.parseExpr(p)) orelse return p.emptySubRange();
+        try list.append(p.gpa, e);
+        if (p.tokTag() == .comma) {
+            _ = p.nextToken();
+            continue;
+        }
+        break;
+    }
+    if (list.items.len == 0) return p.emptySubRange();
+    const lr = try p.addNodeList(list.items);
+    return .{ .start = lr.start, .end = lr.end };
 }
 
 /// foreach 循环：`foreach ($it as $k => $v) body`。
@@ -337,12 +403,23 @@ pub fn parseForeach(p: *Parser) ast.ParseError!?Index {
     // `as` 之后先解析第一个表达式：若其后紧跟 `=>`，则它是键、需再解析值；
     // 否则它即值本身。原实现在 `as` 之后立刻判 `=>`，此时游标尚在键上，
     // 导致键恒为 none 且随即在 `=>` 处报 expected_token。
+    // 引用值：`as &$v`（值即引用）或 `as $k => &$v`（键不可引用，`&` 只在值前）。
+    var value_by_ref = false;
+    if (p.tokTag() == .ampersand) {
+        _ = p.nextToken();
+        value_by_ref = true;
+    }
     const first = (try expr.parseExpr(p)) orelse return null;
     var key: OptionalIndex = .none;
     var value = first;
     if (p.tokTag() == .double_arrow) {
         _ = p.nextToken();
         key = OptionalIndex.fromIndex(first);
+        value_by_ref = false;
+        if (p.tokTag() == .ampersand) {
+            _ = p.nextToken();
+            value_by_ref = true;
+        }
         value = (try expr.parseExpr(p)) orelse return null;
     }
     _ = p.expectToken(.rparen);
@@ -352,6 +429,7 @@ pub fn parseForeach(p: *Parser) ast.ParseError!?Index {
         .key = key,
         .value = value,
         .body = body,
+        .value_by_ref = value_by_ref,
     });
     return (try p.addNode(.{
         .tag = .stmt_foreach,
@@ -365,7 +443,7 @@ pub fn parseForeach(p: *Parser) ast.ParseError!?Index {
 pub fn parseNamespace(p: *Parser) ast.ParseError!?Index {
     const kw = p.nextToken();
     var name: OptionalIndex = .none;
-    if (p.tokTag() == .identifier or p.tokTag() == .backslash or p.tokTag() == .kw_namespace) {
+    if (expr.isNamePart(p.tokTag())) {
         name = OptionalIndex.fromIndex((try expr.parseName(p)) orelse return null);
     }
     var stmts = try std.ArrayList(Index).initCapacity(p.gpa, 0);
@@ -919,7 +997,9 @@ pub fn parseGlobal(p: *Parser) ast.ParseError!?Index {
     var vars = try std.ArrayList(Index).initCapacity(p.gpa, 0);
     defer vars.deinit(p.gpa);
     while (true) {
-        const v = (try expr.parseExpr(p)) orelse return null;
+        // global_var = simple_variable：`global $a, $$b, ${'c'}`，**不含后缀链**
+        // （`global $$foo->bar` 是语法错误——对齐 php-parser grammar 严格形态）。
+        const v = (try expr.parseSimpleVariable(p)) orelse return null;
         try vars.append(p.gpa, v);
         if (p.tokTag() == .comma) {
             _ = p.nextToken();
@@ -1071,6 +1151,24 @@ test "stmt :: for :: 部分段为空" {
     try testing.expectTagCounts(tree, .{ .stmt_for = 1, .expr_binary = 1 });
 }
 
+test "stmt :: for :: 各段逗号分隔多表达式（对齐 For_ init/cond/loop 数组）" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\for ($i = 0, $j = 1; $i < 10, $j < 10; $i++, $j--) { }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    // init 两表达式 + cond 两表达式 + inc 两个自增/自减
+    try testing.expectTagCounts(tree, .{
+        .stmt_for = 1,
+        .expr_assign = 2,
+        .expr_binary = 2,
+        .expr_post_inc = 1,
+        .expr_post_dec = 1,
+    });
+}
+
 test "stmt :: foreach :: 带键与不带键两种形式" {
     const gpa = std.testing.allocator;
     var tree = try ast.Ast.parse(gpa,
@@ -1081,6 +1179,18 @@ test "stmt :: foreach :: 带键与不带键两种形式" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
     try testing.expectTagCounts(tree, .{ .stmt_foreach = 2 });
+}
+
+test "stmt :: foreach :: 值按引用 as &$v 与 as $k => &$v" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\foreach ($a as &$v) { $v++; }
+        \\foreach ($a as $k => &$v) { unset($v); }
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{ .stmt_foreach = 2, .expr_post_inc = 1 });
 }
 
 test "stmt :: do-while :: 先体后条件" {
