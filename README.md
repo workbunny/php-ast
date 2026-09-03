@@ -29,8 +29,6 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 - [doc/api.md](doc/api.md) — 公开 API 手册（含语义旁表与 compat 趋同层）
 - [doc/example.md](doc/example.md) — 与 php-parser 的用法趋同对照示例
 - [doc/special.md](doc/special.md) — 与 php-parser 的实现差异清单（归一、错误模型等）
-- [todo.md](todo.md) — 未完成项与批次排期
-- [skills.md](skills.md) — 库族通用约定：环境、缺陷处理铁律、注释规范
 
 ## 设计
 
