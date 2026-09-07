@@ -3,10 +3,6 @@
     .version = "0.5.0",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0xe570435e50377fea,
-    // 发布包内容：仓库全部产物与文档（含 tests 全部：golden 自足测试、第三方对照源、
-    // 数据文件），排除开发内部文档（PROJECT.md / skills.md / todo.md）与 .gitignore
-    // 忽略项（reference/、zig-pkg/、对照报告 txt、构建缓存等）。报告 txt 默认产出在
-    // 仓库根、已被 .gitignore 忽略；tests 整目录收录不含报告。
     .paths = .{
         "build.zig",
         "build.zig.zon",
