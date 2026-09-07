@@ -131,7 +131,9 @@
   (stmt_expression `=`
     (expr_assign `=`
       (expr_variable `$i`)
-      (expr_shell_exec ```)
+      (expr_shell_exec ```
+        (expr_string_part `ls -l`)
+      )
     )
   )
   (stmt_expression `=`

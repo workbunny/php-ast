@@ -15,9 +15,11 @@ pub const project = @import("project.zig");
 pub const name_resolver = @import("name_resolver.zig");
 pub const node_finder = @import("node_finder.zig");
 pub const parent_map = @import("parent_map.zig");
+pub const semantic = @import("semantic.zig");
 pub const compat = @import("compat.zig");
 
 pub const Ast = @import("ast.zig").Ast;
+pub const Error = @import("ast.zig").Error;
 pub const ParseError = @import("ast.zig").ParseError;
 pub const Node = @import("ast.zig").Node;
 pub const PhpVersion = @import("version.zig").PhpVersion;
@@ -55,6 +57,7 @@ test {
     _ = @import("name_resolver.zig");
     _ = @import("node_finder.zig");
     _ = @import("parent_map.zig");
+    _ = @import("semantic.zig");
     _ = @import("compat.zig");
     // 覆盖矩阵：编译期强制每个 Node.Tag 都有用例（新增节点忘补即编译失败）
     _ = @import("coverage.zig");

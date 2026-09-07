@@ -22,7 +22,7 @@ pub const GenericTypeComponents = struct {
 
 pub fn isTypeStart(p: *Parser) bool {
     return switch (p.tokTag()) {
-        .question, .lparen, .backslash, .kw_namespace, .identifier, .kw_true, .kw_false, .kw_null, .kw_static, .kw_list => true,
+        .question, .lparen, .backslash, .kw_namespace, .identifier, .kw_true, .kw_false, .kw_null, .kw_static, .kw_list, .kw_array => true,
         else => false,
     };
 }
@@ -122,7 +122,7 @@ fn parseTypeBase(p: *Parser) ast.ParseError!?Index {
         const name = (try p.addNode(.{ .tag = .name, .main_token = tok, .data = .{ .token = tok } })) orelse unreachable;
         return (try p.addNode(.{ .tag = .type_name, .main_token = tok, .data = .{ .node = name } })) orelse unreachable;
     }
-    if (t == .identifier or t == .backslash or t == .kw_namespace or t == .kw_list) {
+    if (t == .identifier or t == .backslash or t == .kw_namespace or t == .kw_list or t == .kw_array) {
         // 伪类型 self / parent：直接记为专用节点，与 PHP-Parser 的 Type\Self_/Parent_ 对齐。
         if (t == .identifier) {
             if (p.isSoftKw("self")) {

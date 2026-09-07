@@ -43,15 +43,22 @@ pub const TypeDeclComponents = struct {
 };
 
 pub const PropertyComponents = struct {
-    name: TokenIndex,
     type: OptionalIndex,
     flags: u32,
     visibility: u32,
-    default: OptionalIndex,
+    /// 属性项列表 `$a = 1, $b = 2`（对齐 php-parser Property 的 props: array；
+    /// 每项 property_item：name token + optional default）。
+    props: SubRange,
     hooks: SubRange,
     attrs: SubRange,
     /// 声明结尾的 `;`。
     semi: TokenIndex,
+    /// 源码中是否出现钩子块 `{ ... }`。`hooks` 为空区间无法区分「无钩子」与
+    /// 「空钩子块 `$a { }`」（二者同为空区间）；空钩子块是非法构造（semantic 层
+    /// 报 `hook_empty`），必须能回溯此事实，故单独标记。
+    has_hook_block: bool,
+    /// 钩子块的 `{` token（无钩子块时为 0）——「多属性带钩子」诊断定位在它上面。
+    hook_lbrace: TokenIndex,
 };
 
 pub const PropertyHookComponents = struct {
@@ -59,6 +66,12 @@ pub const PropertyHookComponents = struct {
     flags: u32,
     params: SubRange,
     attrs: SubRange,
+    /// 源码中是否出现参数表 `( ... )`。`params` 为空区间无法区分「空参数表
+    /// `get()`」与「无参数表 `get {}`」，而钩子上出现任何参数表（含空）都非法
+    /// （semantic 层报 `hook_get_params`），故单独标记。
+    has_param_list: bool,
+    /// 参数表的 `(` token（无参数表时为 0）——诊断定位在 `(` 上（php-parser 同）。
+    lparen: TokenIndex,
 };
 
 pub const ClassComponents = struct {
@@ -90,12 +103,26 @@ pub const ParamComponents = struct {
     by_ref: bool,
     type: OptionalIndex,
     default: OptionalIndex,
+    /// 提升属性钩子（8.4 `__construct(public $h { set => $v; })`）；非提升参数为空。
+    hooks: SubRange,
     attrs: SubRange,
+    /// 源码中是否出现钩子块 `{ ... }`（含空块）——同 `PropertyComponents`：
+    /// 空区间无法区分「无钩子」与「空钩子块」，而空钩子块非法需能回溯。
+    has_hook_block: bool,
+    /// 钩子块的 `{` token（无钩子块时为 0）——诊断定位在它上面。
+    hook_lbrace: TokenIndex,
 };
 
 pub const PropertyMods = struct {
     flags: u32,
     visibility: u32,
+    /// 是否出现过任何修饰符/可见性/`var`。属性（PHP 8.5 起）与部分语境依赖此判定
+    /// 「无修饰符声明」是否合法。
+    has_modifier: bool = false,
+    /// 首个修饰符/可见性 token（消息需引用修饰符文本时取用）。
+    first_mod_token: TokenIndex = 0,
+    /// `final` 修饰符 token（`final` 与 `abstract` 冲突时报错定位在此）。
+    final_token: TokenIndex = 0,
 };
 
 /// 类方法（Stmt\ClassMethod）：含可见性 / static / abstract / final / byRef 等修饰符。
@@ -105,6 +132,9 @@ pub const MethodComponents = struct {
     params: SubRange,
     ret: OptionalIndex,
     body: OptionalIndex,
+    /// 声明的修饰符起始 token（无修饰符时即 `function`）。语义诊断（如「魔法方法
+    /// 不能 static」）定位在修饰符上，故需记录。
+    mod_start: TokenIndex,
     flags: u32, // 位标志：1=abstract 2=final 4=static 8=readonly
     visibility: u32, // 0=public 1=protected 2=private
     by_ref: bool,
@@ -219,7 +249,29 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         const d = (try expr.parseExpr(p)) orelse return null;
         def = OptionalIndex.fromIndex(d);
     }
-    const extra = try p.addExtra(ParamComponents{ .name = var_tok, .flags = flags, .promoted = promoted, .variadic = variadic, .by_ref = by_ref, .type = type_opt, .default = def, .attrs = attrs });
+    // 提升属性的属性钩子：`__construct(public $h { set => $value; })`（8.4）。仅提升
+    // （promoted != 0）可带钩子，且其后不能跟默认值（钩子取代 setter 默认赋值语义）。
+    var hooks: SubRange = p.emptySubRange();
+    var has_hook_block = false;
+    var hook_lbrace: TokenIndex = 0;
+    if (promoted != 0 and p.tokTag() == .lbrace) {
+        has_hook_block = true;
+        hook_lbrace = p.tok_i;
+        _ = p.nextToken();
+        var list = try std.ArrayList(Index).initCapacity(p.gpa, 0);
+        defer list.deinit(p.gpa);
+        while (p.tokTag() != .rbrace and p.tokTag() != .eof) {
+            const h = (try parsePropertyHook(p)) orelse {
+                try p.skipToNextStmt();
+                continue;
+            };
+            try list.append(p.gpa, h);
+        }
+        _ = p.eatToken(.rbrace);
+        const lr = try p.addNodeList(list.items);
+        hooks = .{ .start = lr.start, .end = lr.end };
+    }
+    const extra = try p.addExtra(ParamComponents{ .name = var_tok, .flags = flags, .promoted = promoted, .variadic = variadic, .by_ref = by_ref, .type = type_opt, .default = def, .hooks = hooks, .attrs = attrs, .has_hook_block = has_hook_block, .hook_lbrace = hook_lbrace });
     const node = (try p.addNode(.{
         .tag = .param,
         .main_token = var_tok,
@@ -248,8 +300,9 @@ pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         defer impls.deinit(p.gpa);
         const im = (try expr.parseName(p)) orelse return null;
         try impls.append(p.gpa, im);
-        while (p.tokTag() == .comma) {
-            _ = p.nextToken();
+        // `class X implements Y, {` / `interface I extends J, {}`：PHP 不允许尾逗号
+        // （结束定界符 `{` / `;`）
+        while (p.eatListComma(false, &.{ .lbrace, .semicolon })) {
             const more = (try expr.parseName(p)) orelse return null;
             try impls.append(p.gpa, more);
         }
@@ -260,7 +313,11 @@ pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     var stmts = try std.ArrayList(Index).initCapacity(p.gpa, 0);
     defer stmts.deinit(p.gpa);
     while (p.tokTag() != .rbrace and p.tokTag() != .eof) {
+        // parseClassMember 返回 null 表示「注释后即类体结束」（rbrace/eof），须 break
+        // 收尾；其余解析失败（半途成员）才 skipToNextStmt——否则吞掉 `}` 会把类外
+        // 语句并进类体（semiReserved 等类尾注释的 fixture 报错错位）。
         const m = (try parseClassMember(p)) orelse {
+            if (p.tokTag() == .rbrace or p.tokTag() == .eof) break;
             try p.skipToNextStmt();
             if (p.tokTag() == .close_tag) _ = p.nextToken();
             continue;
@@ -288,6 +345,13 @@ pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
 /// 解析类方法（Stmt\ClassMethod）：承载可见性 / static / abstract / final / byRef 等修饰符，
 /// 与顶层函数（stmt_function）区分开，对齐 php-parser 的 `Stmt\ClassMethod`。
 pub fn parseMethod(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseError!?Index {
+    // 引擎级语义诊断（就地——修饰符事实在此即知，信息随后不可恢复）：
+    // readonly 只能修饰属性（`readonly function` 非法）；abstract 与 final 互斥。
+    if ((mods.flags & 1) != 0 and (mods.flags & 2) != 0) {
+        // 定位在 `final` 修饰符上（php-parser 同），非 `function`
+        const ft = if (mods.final_token != 0) mods.final_token else p.tok_i;
+        p.warnAt(ast.Error.Tag.final_on_abstract_member, ft);
+    }
     const kw = p.nextToken();
     var by_ref = false;
     if (p.tokTag() == .ampersand) {
@@ -295,6 +359,12 @@ pub fn parseMethod(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseErr
         by_ref = true;
     }
     const name_tok = p.nextToken();
+    // readonly 方法：消息含方法名（`aux` 指向方法名 token）；区间落在 readonly
+    // 修饰符本身（php-parser 报 `readonly function foo()` 的 readonly 处）。
+    if ((mods.flags & 8) != 0) {
+        const rt = if (mods.first_mod_token != 0) mods.first_mod_token else kw;
+        p.addError(.readonly_method, rt, rt, name_tok, 0);
+    }
     const plr = (try parseParamList(p)) orelse return null;
     var ret: OptionalIndex = .none;
     if (p.tokTag() == .colon) {
@@ -315,6 +385,7 @@ pub fn parseMethod(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseErr
         .params = plr,
         .ret = ret,
         .body = body,
+        .mod_start = if (mods.first_mod_token != 0) mods.first_mod_token else kw,
         .flags = mods.flags,
         .visibility = mods.visibility & 0xFF,
         .by_ref = by_ref,
@@ -326,9 +397,21 @@ pub fn parseMethod(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseErr
     })) orelse unreachable;
 }
 
-/// 解析匿名类 `new class(...) [extends X] [implements Y] { ... }`，复用类节点（stmt_class），名字为空。
-pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
+/// 解析匿名类 `new [readonly] class(...) [extends X] [implements Y] { ... }`，复用
+/// 类节点（stmt_class），名字为空。`readonly` 前缀由调用方已消费（flags 传入）；
+/// 构造参数 `(args)` 在类名后、extends 前，故在此解析并随结果返回（php-parser
+/// New_ 的 args 与 class 并列，归 expr_new 承载）。
+pub const AnonymousClassResult = struct {
+    node: Index,
+    args: ListRange,
+};
+
+pub fn parseAnonymousClass(p: *Parser, attrs: SubRange, readonly_flags: u32) ast.ParseError!?AnonymousClassResult {
     const kw = p.nextToken();
+    var args: ListRange = p.emptyRange();
+    if (p.tokTag() == .lparen) {
+        args = try expr.parseArgs(p);
+    }
     var extends: OptionalIndex = .none;
     if (p.tokTag() == .kw_extends) {
         _ = p.nextToken();
@@ -342,8 +425,9 @@ pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         defer impls.deinit(p.gpa);
         const im = (try expr.parseName(p)) orelse return null;
         try impls.append(p.gpa, im);
-        while (p.tokTag() == .comma) {
-            _ = p.nextToken();
+        // `class X implements Y, {` / `interface I extends J, {}`：PHP 不允许尾逗号
+        // （结束定界符 `{` / `;`）
+        while (p.eatListComma(false, &.{ .lbrace, .semicolon })) {
             const more = (try expr.parseName(p)) orelse return null;
             try impls.append(p.gpa, more);
         }
@@ -359,6 +443,7 @@ pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     _ = p.nextToken();
     while (p.tokTag() != .rbrace and p.tokTag() != .eof) {
         const m = (try parseClassMember(p)) orelse {
+            if (p.tokTag() == .rbrace or p.tokTag() == .eof) break;
             try p.skipToNextStmt();
             if (p.tokTag() == .close_tag) _ = p.nextToken();
             continue;
@@ -374,13 +459,14 @@ pub fn parseAnonymousClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         .extends = extends,
         .implements = impl,
         .stmts = .{ .start = lr.start, .end = lr.end },
-        .flags = 0,
+        .flags = readonly_flags,
     });
-    return (try p.addNode(.{
+    const node = (try p.addNode(.{
         .tag = .stmt_class,
         .main_token = kw,
         .data = .{ .extra_and_opt_node = .{ extra, extends } },
     })) orelse unreachable;
+    return .{ .node = node, .args = args };
 }
 
 /// 解析类体成员：按首 token 分流到 trait use / 方法 / 常量 / 属性。
@@ -398,7 +484,17 @@ pub fn parseClassMember(p: *Parser) ast.ParseError!?Index {
     const mods = parsePropertyModifiers(p);
     if (p.tokTag() == .kw_use) return stmt.parseTraitUse(p);
     if (p.tokTag() == .kw_function) return parseMethod(p, attrs, mods);
-    if (p.tokTag() == .kw_const) return parseClassConst(p, attrs, mods.visibility);
+    if (p.tokTag() == .kw_const) {
+        // 类常量仅接受可见性与 PHP 8.5 的 final；abstract/static/readonly 修饰符
+        // 非法（static const / abstract const / readonly const）。修饰符 token 已被
+        // 收集循环消费、随 AST 不保留，就地诊断（信息不可恢复）。消息含修饰符名，
+        // 由 `first_mod_token` 提供。
+        if ((mods.flags & (1 | 4 | 8)) != 0) {
+            // 区间即该修饰符本身（php-parser 报在修饰符上，不含 `const`）
+            p.addError(.invalid_const_modifier, mods.first_mod_token, mods.first_mod_token, mods.first_mod_token, 0);
+        }
+        return parseClassConst(p, attrs, mods.visibility);
+    }
     return parseProperty(p, attrs, mods);
 }
 
@@ -418,17 +514,44 @@ fn parseModifiers(p: *Parser) u32 {
 }
 
 /// 收集属性修饰符与可见性，支持 PHP 8.4 非对称可见性 `public(private)`。
+///
+/// 就地判定「重复修饰符」（`public public`、`static static $a` 等）：第二次
+/// 起同一修饰符只吃 token 不再次置位，若此处不报，事实随 token 消费永久丢失，
+/// 事后无法从树恢复（故归 parse 期，见 `doc/special.md` P6 的语义诊断分层）。
 fn parsePropertyModifiers(p: *Parser) PropertyMods {
     var res = PropertyMods{ .flags = 0, .visibility = 0 };
     res.visibility |= 3 << 8;
     var vis_count: u8 = 0;
     while (true) {
         switch (p.tokTag()) {
-            .kw_abstract => { res.flags |= 1; _ = p.nextToken(); },
-            .kw_final => { res.flags |= 2; _ = p.nextToken(); },
-            .kw_static => { res.flags |= 4; _ = p.nextToken(); },
-            .kw_readonly => { res.flags |= 8; _ = p.nextToken(); },
+            .kw_abstract => {
+                if (!res.has_modifier) res.first_mod_token = p.tok_i;
+                res.has_modifier = true;
+                if ((res.flags & 1) != 0) p.warnAt(ast.Error.Tag.multiple_abstract_modifiers, p.tok_i) else res.flags |= 1;
+                _ = p.nextToken();
+            },
+            .kw_final => {
+                if (!res.has_modifier) res.first_mod_token = p.tok_i;
+                res.has_modifier = true;
+                if (res.final_token == 0) res.final_token = p.tok_i;
+                if ((res.flags & 2) != 0) p.warnAt(ast.Error.Tag.multiple_final_modifiers, p.tok_i) else res.flags |= 2;
+                _ = p.nextToken();
+            },
+            .kw_static => {
+                if (!res.has_modifier) res.first_mod_token = p.tok_i;
+                res.has_modifier = true;
+                if ((res.flags & 4) != 0) p.warnAt(ast.Error.Tag.multiple_static_modifiers, p.tok_i) else res.flags |= 4;
+                _ = p.nextToken();
+            },
+            .kw_readonly => {
+                if (!res.has_modifier) res.first_mod_token = p.tok_i;
+                res.has_modifier = true;
+                if ((res.flags & 8) != 0) p.warnAt(ast.Error.Tag.multiple_readonly_modifiers, p.tok_i) else res.flags |= 8;
+                _ = p.nextToken();
+            },
             .kw_public, .kw_protected, .kw_private, .kw_var => {
+                if (!res.has_modifier) res.first_mod_token = p.tok_i;
+                res.has_modifier = true;
                 const v: u8 = switch (p.tokTag()) {
                     .kw_public => 0,
                     .kw_protected => 1,
@@ -440,6 +563,10 @@ fn parsePropertyModifiers(p: *Parser) PropertyMods {
                     res.visibility |= v;
                     _ = p.nextToken();
                 } else {
+                    // 第二及以后的可见性 token：仅紧接 `(set)` 的非对称可见性合法
+                    // （`public private(set)`）；其余为重复可见性（Multiple access
+                    // type modifiers）。
+                    const vtok = p.tok_i;
                     _ = p.nextToken();
                     if (p.tokTag() == .lparen) {
                         _ = p.nextToken();
@@ -448,6 +575,8 @@ fn parsePropertyModifiers(p: *Parser) PropertyMods {
                         // 非对称可见性：高字节写入 set 侧可见性（覆盖默认 3），
                         // 使「无 set/有 set」可区分（读取时 set_vis != 3 即表示非对称）。
                         res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
+                    } else {
+                        p.warnAt(ast.Error.Tag.multiple_access_modifiers, vtok);
                     }
                 }
                 vis_count += 1;
@@ -463,21 +592,58 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
     if (types.isTypeStart(p)) {
         const ty = (try types.parseType(p)) orelse return null;
         type_opt = OptionalIndex.fromIndex(ty);
+        // PHP 8.5：属性声明必须有可见性或修饰符（`var` 亦等价 public）——无修饰符
+        // typed property `Foo $a;` 已移除（recovery[19]：拼错可见性的 `publi $foo;`
+        // 在此报错并整条丢弃恢复，php-parser 同——语法错、无 Property 节点）。
+        // 版本编码 major*10000+minor*100：8.5 = 80500。报点落在类型起始 token
+        // （`publi`），php-parser 报 unexpected T_STRING 同此。
+        // 8.4 及以下该形态合法。
+        if (p.version.id >= 80500 and !mods.has_modifier) {
+            const ty_tok = p.nodeMainToken(ty);
+            p.warnAt(ast.Error.Tag.expected_token, ty_tok);
+            return null;
+        }
     }
-    if (p.tokTag() != .variable) {
-        p.warn(ast.Error.Tag.expected_variable);
-        return null;
+    // 属性项列表：`public $a = 'b', $c = 'd';`（每项 property_item：名字 + 可选初值）。
+    // 尾随属性钩子 `{ get => ...; }` 只可能出现在单属性声明后（多属性带钩子是语法错误，
+    // 交由错误恢复兜底，不在此特判）。
+    var items = try std.ArrayList(Index).initCapacity(p.gpa, 0);
+    defer items.deinit(p.gpa);
+    var first_name: TokenIndex = 0;
+    var has_item = false;
+    while (true) {
+        if (p.tokTag() != .variable) {
+            p.warn(ast.Error.Tag.expected_variable);
+            return null;
+        }
+        const name_tok = p.nextToken();
+        if (!has_item) {
+            first_name = name_tok;
+            has_item = true;
+        }
+        var def: OptionalIndex = .none;
+        if (p.tokTag() == .equals) {
+            _ = p.nextToken();
+            const d = (try expr.parseExpr(p)) orelse return null;
+            def = OptionalIndex.fromIndex(d);
+        }
+        const item = (try p.addNode(.{
+            .tag = .property_item,
+            .main_token = name_tok,
+            .data = .{ .opt_node_and_token = .{ def, name_tok } },
+        })) orelse unreachable;
+        try items.append(p.gpa, item);
+        // `public $x, ;`：PHP 不允许尾逗号（结束定界符 `;` 或钩子块 `{`）
+        if (p.eatListComma(false, &.{ .semicolon, .lbrace })) continue;
+        break;
     }
-    const name_tok = p.nextToken();
-    var def: OptionalIndex = .none;
     var hooks: SubRange = p.emptySubRange();
-    var semi: TokenIndex = name_tok;
-    if (p.tokTag() == .equals) {
-        _ = p.nextToken();
-        const d = (try expr.parseExpr(p)) orelse return null;
-        def = OptionalIndex.fromIndex(d);
-        semi = (p.eatToken(.semicolon)) orelse name_tok;
-    } else if (p.tokTag() == .lbrace) {
+    var has_hook_block = false;
+    var hook_lbrace: TokenIndex = 0;
+    var semi: TokenIndex = first_name;
+    if (p.tokTag() == .lbrace) {
+        has_hook_block = true;
+        hook_lbrace = p.tok_i;
         _ = p.nextToken();
         var list = try std.ArrayList(Index).initCapacity(p.gpa, 0);
         defer list.deinit(p.gpa);
@@ -489,26 +655,39 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
             };
             try list.append(p.gpa, h);
         }
-        semi = (p.eatToken(.rbrace)) orelse name_tok;
+        semi = (p.eatToken(.rbrace)) orelse first_name;
         const lr = try p.addNodeList(list.items);
         hooks = .{ .start = lr.start, .end = lr.end };
+        // 带钩子属性以 `}` 收尾：PHP 不要求其后再加分号（php.y 的 hook 属性形态
+        // 声明结束即块闭合），故此处不检查分号。
     } else {
-        semi = (p.eatToken(.semicolon)) orelse name_tok;
+        // 属性声明以 `;` 收尾（PHP 硬性：recovery[25] 的 `private $foo` 后直接下个
+        // 成员或类 `}` 均缺分号，须报）。缺分号时 token 留给类体循环处理（下个成员
+        // 或 `}` 收尾），错误恢复。
+        p.skipComments();
+        const sc = p.eatToken(.semicolon);
+        if (sc) |x| {
+            semi = x;
+        } else {
+            p.warnMissingSemi();
+        }
     }
+    const lr2 = try p.addNodeList(items.items);
     const extra = try p.addExtra(PropertyComponents{
-        .name = name_tok,
         .type = type_opt,
         .flags = mods.flags,
         .visibility = mods.visibility,
-        .default = def,
+        .props = .{ .start = lr2.start, .end = lr2.end },
         .hooks = hooks,
         .attrs = attrs,
         .semi = semi,
+        .has_hook_block = has_hook_block,
+        .hook_lbrace = hook_lbrace,
     });
     const node = (try p.addNode(.{
         .tag = .stmt_property,
-        .main_token = name_tok,
-        .data = .{ .extra_and_opt_node = .{ extra, def } },
+        .main_token = first_name,
+        .data = .{ .extra_and_opt_node = .{ extra, type_opt } },
     })) orelse unreachable;
     // 非对称可见性：非静态为 8.4，静态为 8.5（set_vis == 3 表示未指定非对称）
     const set_vis = (mods.visibility >> 8) & 0xFF;
@@ -523,6 +702,47 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
 pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
     var attrs = p.emptySubRange();
     if (p.tokTag() == .hash) attrs = try parseAttrGroups(p);
+    // 钩子前缀：final/abstract 修饰符与 `&`（引用 getter）。循环吸收不设顺序约束。
+    // 其余修饰符（public/protected/private/static/readonly）在钩子上非法——逐条就地
+    // 诊断（消息含修饰符名）；可见性重复另报 Multiple access type modifiers。
+    var flags: u32 = 0;
+    var vis_count: u8 = 0;
+    while (true) {
+        switch (p.tokTag()) {
+            .kw_final => { flags |= 4; _ = p.nextToken(); },
+            .ampersand => { flags |= 16; _ = p.nextToken(); },
+            .kw_abstract => {
+                // abstract 在钩子上非法（php-parser：`Cannot use the abstract
+                // modifier on a property hook`）——仅 final 与 & 合法。
+                const mt = p.tok_i;
+                _ = p.nextToken();
+                p.addError(.hook_modifier, mt, mt, mt, 0);
+            },
+            .kw_public, .kw_protected, .kw_private => {
+                // 钩子上不允许可见性修饰（php-parser：`Cannot use the X modifier on
+                // a property hook`）；连续两个可见性另报重复（与属性同规则）。
+                const mt = p.tok_i;
+                _ = p.nextToken();
+                if (p.tokTag() == .lparen) {
+                    // `public(set)` 非对称形态在钩子上同样非法，但属可见性重复语义
+                    _ = p.nextToken();
+                    if (p.isSoftKw("set")) _ = p.nextToken() else p.warn(ast.Error.Tag.expected_token);
+                    _ = p.eatToken(.rparen);
+                }
+                if (vis_count > 0) p.warnAt(ast.Error.Tag.multiple_access_modifiers, mt);
+                // 钩子上任何可见性都是非法修饰符（php-parser 对第二个 public 同时报
+                // `hook modifier` 与 `Multiple access` 两条：`public public get;`）
+                p.addError(.hook_modifier, mt, mt, mt, 0);
+                vis_count += 1;
+            },
+            .kw_static, .kw_readonly => {
+                const mt = p.tok_i;
+                _ = p.nextToken();
+                p.addError(.hook_modifier, mt, mt, mt, 0);
+            },
+            else => break,
+        }
+    }
     if (p.tokTag() != .identifier) {
         p.warn(ast.Error.Tag.expected_token);
         return null;
@@ -530,38 +750,67 @@ pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
     const is_set = p.isSoftKw("set");
     const is_get = p.isSoftKw("get");
     if (!is_set and !is_get) {
-        p.warn(ast.Error.Tag.expected_token);
-        return null;
+        // 未知钩子名（`FOO => bar;`）：php-parser 报 `Unknown hook "X", expected
+        // "get" or "set"` 并**保留**该钩子节点（错误不丢结构，收集式模型同旨）。
+        // 保留节点也使其计入钩子列表，`Property hook list cannot be empty` 不会误报。
+        const mt = p.tok_i;
+        _ = p.nextToken();
+        p.addError(.unknown_hook, mt, mt, mt, 0);
+        const extra = try p.addExtra(PropertyHookComponents{
+            .name = mt,
+            .flags = 32, // 未知钩子标记
+            .params = p.emptySubRange(),
+            .attrs = attrs,
+            .has_param_list = false,
+            .lparen = 0,
+        });
+        // 跳过其体到下一个钩子边界
+        while (p.tokTag() != .semicolon and p.tokTag() != .rbrace and p.tokTag() != .eof) {
+            _ = p.nextToken();
+        }
+        _ = p.eatToken(.semicolon);
+        return (try p.addNode(.{
+            .tag = .property_hook,
+            .main_token = mt,
+            .data = .{ .extra_and_opt_node = .{ extra, .none } },
+        })) orelse unreachable;
     }
     const name_tok = p.nextToken();
+    if (is_set) flags |= 1;
     var params: SubRange = p.emptySubRange();
+    var has_param_list = false;
+    var lparen: TokenIndex = 0;
     if (p.tokTag() == .lparen) {
+        has_param_list = true;
+        lparen = p.tok_i;
         params = (try parseParamList(p)) orelse return null;
     }
-    var flags: u32 = 0;
-    if (is_set) flags |= 1;
+    // 三种体：`=> expr` 表达式、`{ ... }` 块、无体抽象声明 `set;` / `&get;`。
+    var body: OptionalIndex = .none;
     if (p.tokTag() == .double_arrow) {
         _ = p.nextToken();
-        const body = (try expr.parseExpr(p)) orelse return null;
+        const e = (try expr.parseExpr(p)) orelse return null;
+        body = OptionalIndex.fromIndex(e);
         _ = p.eatToken(.semicolon);
-        const extra = try p.addExtra(PropertyHookComponents{ .name = name_tok, .flags = flags, .params = params, .attrs = attrs });
-        return (try p.addNode(.{
-            .tag = .property_hook,
-            .main_token = name_tok,
-            .data = .{ .extra_and_node = .{ extra, body } },
-        })) orelse unreachable;
     } else if (p.tokTag() == .lbrace) {
-        const body = (try stmt.parseBlock(p)) orelse return null;
-        const extra = try p.addExtra(PropertyHookComponents{ .name = name_tok, .flags = flags, .params = params, .attrs = attrs });
-        return (try p.addNode(.{
-            .tag = .property_hook,
-            .main_token = name_tok,
-            .data = .{ .extra_and_node = .{ extra, body } },
-        })) orelse unreachable;
+        const b = (try stmt.parseBlock(p)) orelse return null;
+        body = OptionalIndex.fromIndex(b);
     } else {
-        p.warn(ast.Error.Tag.expected_token);
-        return null;
+        _ = p.eatToken(.semicolon); // 抽象钩子：无体，分号收尾
     }
+    const extra = try p.addExtra(PropertyHookComponents{
+        .name = name_tok,
+        .flags = flags,
+        .params = params,
+        .attrs = attrs,
+        .has_param_list = has_param_list,
+        .lparen = lparen,
+    });
+    return (try p.addNode(.{
+        .tag = .property_hook,
+        .main_token = name_tok,
+        .data = .{ .extra_and_opt_node = .{ extra, body } },
+    })) orelse unreachable;
 }
 
 /// 解析类常量（Stmt\ClassConst）：`[可见性] const NAME[: type] = value;`，支持 PHP 8.3 类型。
@@ -569,10 +818,20 @@ pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
 pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseError!?Index {
     const kw = p.nextToken();
     var type_opt: OptionalIndex = .none;
-    if (p.tokTag() == .colon) {
-        _ = p.nextToken();
-        const ty = (try types.parseType(p)) orelse return null;
-        type_opt = OptionalIndex.fromIndex(ty);
+    // PHP 8.3 typed class const：`const int X = 1`（类型在名字前）。与名字形式的歧义
+    // （`const A = 1`）靠试探消解：parseType 成功后其下一位必须是「常量名 + `=`」
+    // 才算带类型，否则回卷按无类型解析。`const A = 1` 的 A 会被 parseType 当单名类型
+    // 吃掉，但其后是 `=`（非名字）→ 回卷。`const int X = 1`：int 后是名字 X + `=` → 采纳。
+    const save0 = p.tok_i;
+    if (types.isTypeStart(p)) {
+        const ty = try types.parseType(p);
+        if (ty == null) {
+            p.tok_i = save0;
+        } else if (expr.isNamePart(p.tokTag()) and p.tokens.items(.tag)[p.tok_i + 1] == .equals) {
+            type_opt = OptionalIndex.fromIndex(ty.?);
+        } else {
+            p.tok_i = save0;
+        }
     }
     // 常量列表：`const NAME = value, NAME2 = value2;`（每项 const_decl，与顶层 const 同构）。
     var decls = try std.ArrayList(Index).initCapacity(p.gpa, 0);
@@ -591,13 +850,16 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
             .data = .{ .node_and_token = .{ value, name_tok } },
         })) orelse unreachable;
         try decls.append(p.gpa, item);
-        if (p.tokTag() == .comma) {
-            _ = p.nextToken();
-            continue;
-        }
+        // `const A = 42, ;`（类常量）：PHP 不允许尾逗号（结束定界符 `;`）
+        if (p.eatListComma(false, &.{.semicolon})) continue;
         break;
     }
-    const semi = (p.eatToken(.semicolon)) orelse kw;
+    p.skipComments();
+    const semi = (p.eatToken(.semicolon)) orelse blk: {
+        // 类常量以 `;` 收尾（PHP 硬性；recovery[25]：`const X = 1` 后直接类 `}` 缺分号）。
+        p.warnMissingSemi();
+        break :blk kw;
+    };
     const lr = try p.addNodeList(decls.items);
     const extra = try p.addExtra(ClassConstComponents{
         .type = type_opt,
@@ -664,6 +926,7 @@ pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.Pa
     } else {
         while (p.tokTag() != .rbrace and p.tokTag() != .eof) {
             const m = (try parseClassMember(p)) orelse {
+                if (p.tokTag() == .rbrace or p.tokTag() == .eof) break;
                 try p.skipToNextStmt();
                 if (p.tokTag() == .close_tag) _ = p.nextToken();
                 continue;
@@ -767,7 +1030,25 @@ pub fn parseParamList(p: *Parser) ast.ParseError!?SubRange {
     var params = try std.ArrayList(Index).initCapacity(p.gpa, 0);
     defer params.deinit(p.gpa);
     while (p.tokTag() != .rparen and p.tokTag() != .eof) {
-        const pr = (try parseParam(p)) orelse return null;
+        // 参数间的注释/文档注释不建节点（typeVersions 等 fixture 的参数行尾有
+        // `// PHP 7.0` 这类注解），跳过——否则被当参数起始报 expected_variable。
+        while (p.tokTag() == .comment or p.tokTag() == .doc_comment) {
+            _ = p.nextToken();
+        }
+        if (p.tokTag() == .rparen or p.tokTag() == .eof) break;
+        const pr = (try parseParam(p)) orelse {
+            // 单个参数解析失败（如缺变量名 `function foo(Type)`）：错误已在
+            // parseParam 内报；跳过到 `,`/`)` 继续解析其余参数与整个声明——
+            // 放弃整个函数会让调用方 skipToNextStmt 吞掉后续语句（漏报其错误）。
+            while (p.tokTag() != .comma and p.tokTag() != .rparen and p.tokTag() != .eof) {
+                _ = p.nextToken();
+            }
+            if (p.tokTag() == .comma) {
+                _ = p.nextToken();
+                continue;
+            }
+            break;
+        };
         try params.append(p.gpa, pr);
         if (p.tokTag() == .comma) _ = p.nextToken();
     }
@@ -779,6 +1060,57 @@ pub fn parseParamList(p: *Parser) ast.ParseError!?SubRange {
 // ===========================================================================
 // 测试：声明（函数 / 类 / 接口 / trait / 枚举 / 成员 / 参数）
 // ===========================================================================
+
+test "decl :: 参数缺变量 :: 每处缺名参数报一条，后续声明不被吞" {
+    const gpa = std.testing.allocator;
+    // 参数缺变量（`function foo(Type)` 等）：每处报 expected_variable；参数错误
+    // 恢复后后续声明（class Bar 及其方法）仍被解析，不因首错被吞掉。
+    var t = try ast.Ast.parse(gpa,
+        \\<?php
+        \\function foo(Type) {}
+        \\function foo(Type1 $foo, Type2) {}
+        \\class Bar {
+        \\    function foo(Baz)
+        \\}
+    , testing.v85);
+    defer t.deinit(gpa);
+    // foo(Type) 的 Type、foo(Type1 $foo, Type2) 的 Type2、Bar::foo(Baz) 的 Baz
+    // 三处缺变量名
+    try std.testing.expectEqual(@as(usize, 3), testing.countError(&t, .expected_variable));
+    try testing.expectTagCounts(t, .{ .stmt_class = 1, .stmt_method = 1 });
+}
+
+test "decl :: 属性/类常量缺收尾分号 :: 报 expected_semi（recovery[25] 形态）" {
+    const gpa = std.testing.allocator;
+
+    // 类成员后直接下个成员
+    var a = try ast.Ast.parse(gpa, "<?php class B { private $foo public $bar }", testing.v85);
+    defer a.deinit(gpa);
+    try std.testing.expect(testing.countError(&a, .expected_semi) >= 1);
+
+    // 类常量后直接类尾 `}`
+    var b = try ast.Ast.parse(gpa, "<?php class B { const X = 1 }", testing.v85);
+    defer b.deinit(gpa);
+    try std.testing.expect(testing.countError(&b, .expected_semi) >= 1);
+
+    // 合法写法无诊断（含带钩子属性以 `}` 收尾、其后无需分号）
+    var c = try ast.Ast.parse(gpa, "<?php class B { private $foo; const X = 1; public $p { get { return 1; } } }", testing.v85);
+    defer c.deinit(gpa);
+    try testing.expectNoErrors(c);
+}
+
+test "decl :: PHP 8.5 :: 无修饰符 typed property 被拒绝（recovery[19] 形态）" {
+    const gpa = std.testing.allocator;
+    // 拼错可见性 → 无修饰符的 typed property：8.5 起非法并整条丢弃
+    var t = try ast.Ast.parse(gpa, "<?php class Foo { public $bar1; publi $foo; public $bar; }", testing.v85);
+    defer t.deinit(gpa);
+    try std.testing.expect(t.errors.len > 0);
+
+    // 8.4 及以下该形态合法（无修饰符 typed property 仍允许）
+    var old = try ast.Ast.parse(gpa, "<?php class Foo { publi $foo; }", testing.v84);
+    defer old.deinit(gpa);
+    try testing.expectNoErrors(old);
+}
 
 test "decl :: 顶层函数 :: 参数与返回值成节点" {
     const gpa = std.testing.allocator;
@@ -800,6 +1132,49 @@ test "decl :: 函数 :: 引用返回 function &foo 与 by-ref 参数 &...$x" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
     try testing.expectTagCounts(tree, .{ .stmt_function = 2, .param = 3 });
+}
+
+test "decl :: A3 G5 声明族回归 :: 多属性/typed const/promotion 钩子/表达式位属性组/匿名类" {
+    const gpa = std.testing.allocator;
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class A extends B implements C, D {
+        \\    public $a = 'b', $c = 'd';
+        \\    const int TYPED = 1, TRAIT = 3, FINAL = 4;
+        \\    use TraitA, TraitB {
+        \\        TraitA::catch insteadof namespace\TraitB;
+        \\        TraitB::throw as protected public;
+        \\        A::
+        \\            // comment
+        \\        catch insteadof B;
+        \\    }
+        \\}
+        \\class P {
+        \\    public function __construct(
+        \\        public float $x = 0.0,
+        \\        public $h { set => $value; },
+        \\        public $g = 1 { get => 2; },
+        \\        final $i,
+        \\    ) {}
+        \\}
+        \\$c = #[A1] function () {};
+        \\$d = #[A2] static fn() => 0;
+        \\$e = new #[A3] class(1) extends B {};
+    , testing.v85);
+    defer tree.deinit(gpa);
+    try testing.expectNoErrors(tree);
+    try testing.expectTagCounts(tree, .{
+        .stmt_class = 3,
+        .property_item = 2, // public $a, $c
+        .stmt_class_const = 1,
+        .const_decl = 3, // TYPED/TRAIT/FINAL
+        .stmt_trait_use = 1,
+        .trait_use_adaptation_precedence = 2, // namespace\TraitB + 跨行 B
+        .trait_use_adaptation_alias = 1,
+        .expr_closure = 1,
+        .expr_arrow_function = 1,
+        .attr_group = 3, // A1 A2 A3
+    });
 }
 
 test "decl :: 类 :: 继承与方法分别成节点" {

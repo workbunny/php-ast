@@ -520,7 +520,14 @@ pub fn phpParserType(tag: Node.Tag) []const u8
 供日志/调试与 php-parser 对照。运算符子类型已折叠不展开（`expr_binary` + 运算符 token，
 见 `doc/special.md` P1）。
 
-### 位置便捷（B11）
+### 节点源码区间
+
+`firstToken` / `lastToken` 给出节点完整源码区间（含全部后代与尾部定界符）。定界符
+（`;`、`}`、数组的 `]`/`)` 等）不属任何节点子节点，由 `trailingDelimiter` 单独取回——
+数组字面量 `[...]`/`array(...)` 与 `list(...)` 的闭合符即记在其 data 的 token 槽位。
+
+零宽 token（如 EOF）作区间终点时，结束位置取其后一位，使「延伸到文件尾」的诊断
+（未终止注释等）覆盖到最后一个字符。
 
 ```zig
 pub fn startLine(tree: Ast, node: Index) usize      // 1 基
@@ -534,7 +541,7 @@ pub fn endTokenPos(tree: Ast, node: Index) usize
 **简介**：由 `main_token` 派生、语义对齐 php-parser 位置属性（行 1 基、`endFilePos`
 为末字节之后）。
 
-### `getDocComment`（B12）
+### `getDocComment`
 
 ```zig
 pub fn getDocComment(tree: Ast, gpa: std.mem.Allocator, node: Index) !?[]u8
@@ -543,7 +550,7 @@ pub fn getDocComment(tree: Ast, gpa: std.mem.Allocator, node: Index) !?[]u8
 **简介**：取紧贴节点前的 docblock 文本（无则 null）；非 docblock 的普通注释不返回。
 返回切片在 `gpa` 上分配，调用方释放。
 
-### `AttrMap`（B10）
+### `AttrMap`
 
 ```zig
 pub const AttrMap = struct {
@@ -582,7 +589,7 @@ pub const operators: [M]Mapping  // 运算符/标点文本 → Tag，如 "===" �
 ```
 
 **简介**：关键字与运算符的**单点维护表**。词法器、`keywordTag`/`opTag`、`lexeme`、以及测试的
-词法覆盖矩阵均读这两张表——新增关键字或运算符只改这一处，其余自动生效。
+词法覆盖矩阵均读这两张表——关键字与运算符的定义只需在此维护，其余各处自动生效。
 
 `operators` 按文本长度从长到短排列（顺序有语义：多字符运算符必须优先于单字符，如 `==` 先于 `=`）。
 

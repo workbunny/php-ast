@@ -165,7 +165,15 @@ pub const Token = struct {
         kw_goto,
         kw_global,
         kw_unset,
+        kw_array,
         kw_insteadof,
+        // 替代语法结束关键字（`if (x): ... endif;` 等）
+        kw_endif,
+        kw_endwhile,
+        kw_endfor,
+        kw_endforeach,
+        kw_endswitch,
+        kw_enddeclare,
         kw_halt_compiler,
         inline_html,
 
@@ -247,7 +255,15 @@ pub const Token = struct {
         .{ .t = "goto", .tag = .kw_goto },
         .{ .t = "global", .tag = .kw_global },
         .{ .t = "unset", .tag = .kw_unset },
+        .{ .t = "array", .tag = .kw_array },
         .{ .t = "insteadof", .tag = .kw_insteadof },
+        // 替代语法结束关键字（`if (x): ... endif;` 等）
+        .{ .t = "endif", .tag = .kw_endif },
+        .{ .t = "endwhile", .tag = .kw_endwhile },
+        .{ .t = "endfor", .tag = .kw_endfor },
+        .{ .t = "endforeach", .tag = .kw_endforeach },
+        .{ .t = "endswitch", .tag = .kw_endswitch },
+        .{ .t = "enddeclare", .tag = .kw_enddeclare },
         .{ .t = "halt_compiler", .tag = .kw_halt_compiler },
     };
 

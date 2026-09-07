@@ -10,6 +10,7 @@
       (type_name `string`
         (name `string`)
       )
+      (property_item `$ro`)
     )
     (stmt_property `$counter`
       (type_nullable `?`
@@ -17,23 +18,27 @@
           (name `int`)
         )
       )
-      (expr_const_fetch `null`
-        (name `null`)
+      (property_item `$counter`
+        (expr_const_fetch `null`
+          (name `null`)
+        )
       )
     )
     (stmt_property `$list`
       (type_name `array`
         (name `array`)
       )
-      (expr_array `[`
-        (expr_array_item `1`
-          (expr_int `1`)
-        )
-        (expr_array_item `2`
-          (expr_int `2`)
-        )
-        (expr_array_item `3`
-          (expr_int `3`)
+      (property_item `$list`
+        (expr_array `[`
+          (expr_array_item `1`
+            (expr_int `1`)
+          )
+          (expr_array_item `2`
+            (expr_int `2`)
+          )
+          (expr_array_item `3`
+            (expr_int `3`)
+          )
         )
       )
     )

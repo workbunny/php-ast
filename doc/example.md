@@ -4,13 +4,13 @@
 php-parser 若干行解决的问题，本库不应要求更多行或更绕的路径（绕路意味着损失性能与体验）。
 
 本库内部结构与 php-parser 不同（保真对象树 vs 语义 SoA），但面向使用者的操作应收敛到
-同等表达力。本文档逐例给出两边写法，作为对齐验收：
+同等表达力。本文档逐例给出两边写法，作为对齐依据：
 
 - 结果一致（两侧判定同一事物）；
 - 行数/复杂度同级（php-ast 明显更长 = API 缺陷，应优化至同级）；
 - 本库额外能做的（php-parser 做不到的）一并示例。
 
-判例口径见 `todo.md`「用法趋同的定义」；结构差异根源见 `doc/special.md`。
+判例口径：结果一致、复杂度同级；结构差异根源见 `doc/special.md`。
 
 ---
 
@@ -69,7 +69,7 @@ switch (node.tag) {
 
 php-parser 的名字是继承体系（`Name` / `FullyQualified` / `Relative` 三个类），
 "是否名字"要 `instanceof Name`（命中全部子类）；本库 4 个名字 tag 语义上共用一个
-"名字"角色，可提供单一谓词一次判定，无需枚举 tag（规划中：`isNameTag()`）。
+"名字"角色，可按角色一次判定，无需枚举 tag。
 
 ---
 
@@ -91,8 +91,8 @@ defer res.deinit();
 const fqn = res.lookup(name_node);                // ?[]const u8 = "Vendor\Foo"
 ```
 
-**结论**：结果一致。实现差异：php-parser 允许改写名字节点（挂 `resolvedName` 属性），
-本库 token 区间表达名字、token 流固定，改为产出旁表（`Resolution`），一次遍历建索引、
+**结论**：结果一致。差异在于 php-parser 允许改写名字节点（挂 `resolvedName` 属性）；
+本库 token 区间表达名字、token 流固定，故产出旁表（`Resolution`），一次遍历建索引、
 `lookup(node)` 取 FQN。`Resolution.deinit` 统一释放，多次查询零额外分配。
 
 ---
@@ -212,10 +212,10 @@ const kind = attrs.get(node, "kind");                            // ?[]const u8
 
 ---
 
-## 对照写法约定（回顾）
+## 对照写法约定
 
 - 结果一致：两侧操作落在同一语义结果上；
-- 复杂度同级：php-ast 版本不应显著更长/更绕，否则视为 API 缺陷回炉；
-- 已覆盖项见上（含 compat 层：类型名字符串、位置、doc comment、attributes，实现于
-  `src/compat.zig`）；未覆盖项（树变换、源码打印，todo.md 第四批 B2/B5）在对应
-  todo 项完成后补例，口径不变。
+- 复杂度同级：php-ast 版本不应显著更长/更绕，否则视为 API 缺陷；
+- 上述示例覆盖：类型名字符串、位置、doc comment、attributes（compat 层，实现于
+  `src/compat.zig`）；树变换与源码打印不在本库职责内（见 `doc/special.md` P8），故无
+  对应示例。

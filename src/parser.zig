@@ -29,7 +29,13 @@ pub const Parser = struct {
     errors: std.ArrayList(ast.Error),
     /// 与 `nodes` 等长：按节点顺序记录「引入版本」，`BASE_VERSION` 表示基础语法。
     node_versions: std.ArrayList(PhpVersion),
+    /// 目标解析版本（`Ast.parse` 传入）。解析期内作**反向/消歧**判断用：如花括号
+    /// 下标 `$a{'b'}` 是 ≤7.4 语法，8.0+ 不消费 `{` 为下标（避免误吞属性钩子/块）。
+    version: PhpVersion,
     tok_i: TokenIndex,
+    /// 已解析 `__HALT_COMPILER()`：其后的 token 流被整体截断（tok_i 置 eof），
+    /// 外层块的「未闭合」是 halt 语义所致，不应按缺 `}` 报错。
+    halted: bool = false,
 
     pub fn addNode(p: *Parser, elem: Node) ast.ParseError!?Index {
         try p.nodes.append(p.gpa, elem);
@@ -85,9 +91,62 @@ pub const Parser = struct {
         return .{ .start = i, .end = i };
     }
 
-    /// 记录一条解析错误（不中断解析，继续向前兼容最坏情况）。
+    /// 记录一条解析错误（不中断解析，继续向前兼容最坏情况）。诊断区间为当前 token。
     pub fn warn(p: *Parser, tag: ast.Error.Tag) void {
-        p.errors.append(p.gpa, .{ .tag = tag, .token = p.tok_i, .required = BASE_VERSION }) catch {};
+        p.warnRange(tag, p.tok_i, p.tok_i);
+    }
+
+    /// 记录一条定位到指定 token 的解析错误（调用方在消费 token 前保留其下标）。
+    pub fn warnAt(p: *Parser, tag: ast.Error.Tag, token: TokenIndex) void {
+        p.warnRange(tag, token, token);
+    }
+
+    /// 记录一条覆盖 token 区间 `[start, end]`（均含）的诊断，供消息渲染取用范围。
+    pub fn warnRange(p: *Parser, tag: ast.Error.Tag, start: TokenIndex, end: TokenIndex) void {
+        p.addErrorRange(tag, start, end, start, 0);
+    }
+
+    /// 记录带附加 token 与数值参数的诊断（消息需引用具体文本/数值时使用）。
+    pub fn addError(
+        p: *Parser,
+        tag: ast.Error.Tag,
+        start: TokenIndex,
+        end: TokenIndex,
+        aux: TokenIndex,
+        data: u32,
+    ) void {
+        p.addErrorRange(tag, start, end, aux, data);
+    }
+
+    fn addErrorRange(
+        p: *Parser,
+        tag: ast.Error.Tag,
+        start: TokenIndex,
+        end: TokenIndex,
+        aux: TokenIndex,
+        data: u32,
+    ) void {
+        // 错误恢复常在同一点多次触发**同一判据**（相邻 last 同 tag 同区间即视为
+        // 重复，不再报）。不同 tag 可同区间并存（php-parser 对同一 token 会报多条
+        // 不同消息，如钩子上的 `public public` = hook modifier + Multiple access）。
+        if (p.errors.items.len > 0) {
+            const last = p.errors.items[p.errors.items.len - 1];
+            if (last.tag == tag and last.token == start and last.token_end == end) return;
+        }
+        p.errors.append(p.gpa, .{
+            .tag = tag,
+            .token = start,
+            .token_end = end,
+            .aux = aux,
+            .data = data,
+            .required = BASE_VERSION,
+        }) catch {};
+    }
+
+    /// 语句收尾缺分号诊断。PHP 允许语句后紧跟结束标签 `?>` 时省略分号
+    /// （`<?php echo 1 ?>` 合法），故当前 token 是 close_tag 时不报。
+    pub fn warnMissingSemi(p: *Parser) void {
+        if (p.tokTag() != .close_tag) p.warn(ast.Error.Tag.expected_semi);
     }
 
     /// 取走当前 token 并把游标推进到下一位，返回被取走的 token。
@@ -139,8 +198,98 @@ pub const Parser = struct {
         return p.tokTag() == .identifier and std.mem.eql(u8, p.tokSlice(), kw);
     }
 
-    /// 跳过到下一个语句边界：跨过 `;`、区块、行注释或文件尾。
+    /// 跳过注释 token（PHP 中注释等价空白，可出现在语句收尾分号等 token 之前）。
+    pub fn skipComments(p: *Parser) void {
+        while (p.tokTag() == .comment or p.tokTag() == .doc_comment) _ = p.nextToken();
+    }
+
+    /// 列表分隔符：消费 `,` 并继续。
+    ///
+    /// `allow_trailing` 为假时（PHP 不允许尾逗号的位置：`echo` / `global` / `static`
+    /// 变量 / const 声明 / implements / extends / use / 属性声明 / declare / for 表达式
+    /// 等），若 `,` 紧邻结束定界符（由调用方给出集合）则是尾逗号：报
+    /// `trailing_comma` 并消费它，返回 false 表示列表结束（php-parser 同：报一条
+    /// 专用错误，不按「缺元素」处理，也不影响后续解析）。
+    ///
+    /// `allow_trailing` 为真时（函数调用实参、数组字面量、参数表、组 use 等）不检查。
+    pub fn eatListComma(
+        p: *Parser,
+        allow_trailing: bool,
+        terminators: []const Token.Tag,
+    ) bool {
+        if (p.tokTag() != .comma) return false;
+        const comma = p.tok_i;
+        _ = p.nextToken();
+        if (!allow_trailing) {
+            for (terminators) |t| {
+                if (p.tokTag() == t) {
+                    p.warnAt(ast.Error.Tag.trailing_comma, comma);
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /// 错误恢复：跳过到「语句同步点」——下一个 `;`（消费）、块闭合 `}`/EOF/close_tag
+    /// （不消费），或可作新语句起始的 token（不消费）。
+    ///
+    /// 比 `skipToNextStmt` 保守：不会吞掉后续语句（php-parser 在语句起始 token 处即可
+    /// 重新同步，缺分号后的 `bar()` / `baz()` 是两个错误而非一个）。
+    /// `consume_rbrace`：真则在 `}` 处一并消费。表达式语句的恢复里遇到 `}` 说明该
+    /// 花括号是表达式的一部分（`['b']` 的花括号下标），应继续跳到 `;`；块内恢复
+    /// 时 `}` 是块闭合，不应消费。
+    pub fn skipToStmtSync(p: *Parser, consume_rbrace: bool) void {
+        while (true) {
+            switch (p.tokTag()) {
+                .eof, .close_tag => return,
+                .rbrace => {
+                    if (consume_rbrace) _ = p.nextToken() else return;
+                },
+                .semicolon => {
+                    _ = p.nextToken();
+                    return;
+                },
+                else => {
+                    if (isStmtStartTag(p.tokTag())) return;
+                    _ = p.nextToken();
+                },
+            }
+        }
+    }
+
+    /// 能否作为一条新语句的起始 token（错误恢复的同步点判定）。标识符亦计入——
+    /// 吞掉后续语句（漏报其错误）比在该点多报一条更不可接受。
+    fn isStmtStartTag(tag: Token.Tag) bool {
+        return switch (tag) {
+            .variable, .hash, .dollar, .identifier => true,
+            .kw_function, .kw_class, .kw_if, .kw_while, .kw_for, .kw_foreach,
+            .kw_return, .kw_echo, .kw_use, .kw_namespace, .kw_const, .kw_switch,
+            .kw_try, .kw_throw, .kw_do, .kw_break, .kw_continue, .kw_global,
+            .kw_unset, .kw_list, .kw_new, .kw_clone, .kw_match, .kw_goto,
+            .kw_declare, .kw_interface, .kw_trait, .kw_enum, .kw_abstract,
+            .kw_final, .kw_readonly, .kw_print, .kw_case, .kw_default, .kw_elseif,
+            .kw_else, .kw_catch, .kw_finally, .kw_endif, .kw_endwhile, .kw_endfor,
+            .kw_endforeach, .kw_endswitch, .kw_fn, .kw_require, .kw_require_once,
+            .kw_include, .kw_include_once, .kw_exit, .kw_eval, .kw_isset,
+            .kw_empty, .kw_yield, .kw_array, => true,
+            else => false,
+        };
+    }
+
+    /// 跳过到下一个语句边界：先前进一个 token（保证恢复收敛），再跳到「语句同步点」
+    /// ——`;`（消费）、块闭合 `}`/EOF/close_tag（不消费），或可作新语句起始的 token
+    /// （不消费）。
+    ///
+    /// 不整块吞掉后续声明：语句起始 token（`class`/`function`/`$x` 等）处即重新同步，
+    /// 使后续语句自身的错误也能被报出（php-parser 同）。
     pub fn skipToNextStmt(p: *Parser) ast.ParseError!void {
+        if (p.tokTag() != .eof) _ = p.nextToken();
+        p.skipToStmtSync(false);
+    }
+
+    /// 原始实现：跨过 `;`、区块、行注释或文件尾（吞掉整块）。
+    pub fn skipToNextStmtBlock(p: *Parser) ast.ParseError!void {
         while (p.tokTag() != .eof) : (p.tok_i += 1) {
             switch (p.tokTag()) {
                 .semicolon, .rbrace, .eof => {

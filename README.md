@@ -29,6 +29,7 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 - [doc/api.md](doc/api.md) — 公开 API 手册（含语义旁表与 compat 趋同层）
 - [doc/example.md](doc/example.md) — 与 php-parser 的用法趋同对照示例
 - [doc/special.md](doc/special.md) — 与 php-parser 的实现差异清单（归一、错误模型等）
+- [doc/dev.md](doc/dev.md) — 开发者手册：代码库布局、测试体系（种类/触发/调试）、开发流程与核对清单
 
 ## 设计
 
@@ -47,8 +48,8 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
    Ast（结构数组：tokens / nodes / extra_data / errors）
       │
       ▼
-   消费方：自行 switch(nodeTag) 遍历；反向生成源码的 PrettyPrinter（B5）为规划
-   子功能模块，见 todo.md「下一批」
+   消费方：自行 switch(nodeTag) 遍历。反向生成源码（PrettyPrinter）不在本库范围内，
+   如需源码打印请在 token 流之上自建保真模块（见 doc/zen.md「适用性边界」）
 ```
 
 ### 架构思路
@@ -176,11 +177,17 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `src/parent_map.zig`  | 父链旁表：`build`/`parentOf`/`chainToRoot`                                                                   |
 | `src/node_finder.zig` | 谓词查找：`find`/`findTag`/`findFirst`/`findFirstTag`（短路）                                                 |
 | `src/compat.zig`      | php-parser 用法趋同层：`phpParserType`/位置六函数/`getDocComment`/`AttrMap`                                 |
-| `src/fixture_scan.zig`| A3 预扫描工具：对照 php-parser `.test` 报接受/拒绝差距（`zig test src/fixture_scan.zig`）                    |
 | `src/testing.zig`     | 共享测试断言工具（对应 `std.testing` 的项目级等价物）                                                        |
 | `src/coverage.zig`    | 覆盖矩阵，编译期强制每个 `Node.Tag` / `Token.Tag` 都有用例                                                   |
 | `src/dump.zig`        | AST 文本渲染，用于调试与黄金快照                                                                             |
 | `src/golden.zig`      | 黄金快照比对（`tests/golden/**`），`-Dupdate-golden` 可重新生成                                              |
+
+仓库其余目录：`tools/` 是与主体库源码分离、不随库编译的辅助工具——含 `parity_check.zig`
+（一致性对照工具：以 php-parser 测试子集为基准度量本库的接受面与诊断质量，运行
+`zig build check-parity`，报告写在仓库根；可传参指定对照基准目录并把报告写进该目录，
+用法见 `tools/parity_check.zig` 头部注释）；`tests/third_party/php-parser/` 为 php-parser 测试子集
+（BSD 3-Clause，含 LICENSE，对照数据源）；`reference/` 为本地参考（php-parser 完整源码
+等，`.gitignore` 忽略，不入库）。
 
 ## 说明
 
@@ -203,8 +210,8 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 
 
 **注：版本标记：`-` 表示基础语法（PHP 8 之前即存在）；具体版本号（如 `8.1`）表示自该版本引入；
-`8.4+` 表示 8.4 起并随主干持续演进。状态 `✓` 已实现；`×` 未实现（指库附加便捷特性，不属于语法节点覆盖）；
-`✓*` 已实现但保真度有损（见备注）。**
+`8.4+` 表示 8.4 起并随主干持续演进。状态 `✓` 支持；`×` 不支持（指库附加便捷特性，不属于语法节点覆盖）；
+`✓*` 支持但保真度有损（见备注）。**
 
 #### 词法 Lexer
 
@@ -264,7 +271,7 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `Expr\Assign`（含复合赋值）                         | -        | ✓   | 普通赋值 `=`                                                                               |
 | `Expr\AssignRef` 引用赋值 `=&`                      | -        | ✓   |                                                                                            |
 | `Expr\AssignOp\*` 复合赋值算子                      | -        | ✓   | 运算符经 `main_token` 还原（`+=` `-=` 等）                                                 |
-| `Expr\BinaryOp\*` 二元运算                          | -        | ✓   | 运算符经 `main_token` 还原；已支持 `&` `\|` `^` `<<` `>>` `??` `and`/`or`/`xor` 及比较运算 |
+| `Expr\BinaryOp\*` 二元运算                          | -        | ✓   | 运算符经 `main_token` 还原；支持 `&` `\|` `^` `<<` `>>` `??` `and`/`or`/`xor` 及比较运算   |
 | `Expr\BitwiseNot` / `BooleanNot`                    | -        | ✓   |                                                                                            |
 | `Expr\UnaryPlus` / `UnaryMinus`                     | -        | ✓   |                                                                                            |
 | `Expr\PreInc` / `PreDec` 前缀 ++/--                 | -        | ✓   |                                                                                            |
@@ -353,7 +360,7 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `clone($obj, withProperties: [...])`                   | 8.5      | ✓   | `expr_clone` 节点新增可选的 `withProperties` 子节点                      |
 | 常量上的注解（类常量 / 全局常量）                      | 8.5      | ✓   | `stmt_class_const` / `const_decl` 带属性组时标注 8.5                     |
 | 构造器属性提升 + `final`（`public final int $x`）      | 8.5      | ✓   | `param` 节点在「提升且含 final 修饰」时标注 8.5                          |
-| 静态属性非对称可见性（`public protected(set) static`） | 8.5      | ✓   | 非对称可见性（8.4）现已解析识别（set 侧可见性 != 3）；静态叠加即 8.5     |
+| 静态属性非对称可见性（`public protected(set) static`） | 8.5      | ✓   | 非对称可见性由 8.4 起支持（`visibility` 高字节 set 侧 != 3）；静态叠加即 8.5 |
 
 #### 遍历与注释
 

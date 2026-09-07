@@ -50,6 +50,7 @@ const cases = [_]Case{
     .{ .tag = .stmt_trait, .src = "<?php trait T {}" },
     .{ .tag = .stmt_case, .src = "<?php enum E { case A; }" },
     .{ .tag = .stmt_property, .src = "<?php class C { public int $x; }" },
+    .{ .tag = .property_item, .src = "<?php class C { public $a = 1; }" },
     .{ .tag = .property_hook, .src = "<?php class C { public int $x { get => 1; } }" },
     .{ .tag = .stmt_namespace, .src = "<?php namespace N {}" },
     .{ .tag = .stmt_return, .src = "<?php function f() { return 1; }" },
@@ -112,6 +113,8 @@ const cases = [_]Case{
     .{ .tag = .expr_match, .src = "<?php match ($a) { default => 1 };" },
     .{ .tag = .expr_match_arm, .src = "<?php match ($a) { default => 1 };" },
     .{ .tag = .expr_first_class_callable, .src = "<?php f(...);" },
+    .{ .tag = .expr_variadic_placeholder, .src = "<?php $o->m(...);" },
+    .{ .tag = .expr_array_hole, .src = "<?php [, $a] = $b;" },
     // 匿名函数须位于表达式位置：顶层的 `function` 会被当作命名函数声明。
     .{ .tag = .expr_closure, .src = "<?php $f = function () {};" },
     .{ .tag = .expr_arrow_function, .src = "<?php fn () => 1;" },

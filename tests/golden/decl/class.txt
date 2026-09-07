@@ -11,12 +11,15 @@
       (type_name `int`
         (name `int`)
       )
-      (expr_int `1`)
+      (property_item `$n`
+        (expr_int `1`)
+      )
     )
     (stmt_property `$s`
       (type_name `string`
         (name `string`)
       )
+      (property_item `$s`)
       (property_hook `get`
         (expr_property_fetch `$this`
           (expr_variable `$this`)

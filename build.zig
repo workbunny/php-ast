@@ -8,9 +8,10 @@ const std = @import("std");
 /// 底部，而非集中于独立 `tests/` 目录。这样测试与实现同处一文件、可读性强，
 /// 且能覆盖文件内私有的辅助函数。
 ///
-/// 收集是自动的：`b.addTest(.{ .root_module = lib_mod })` 会递归扫描 `lib_mod`
-/// 及其全部传递依赖（token/ast/lexer/parser*/walk/project/version）中的 `test` 块，
-/// 新增测试文件时**无需**改动本文件。
+/// Zig 对 `@import` 惰性分析，测试收集靠 `src/root.zig` 末尾的登记 `test { }` 强制
+/// `_ = @import(...)` 各模块——新增含 `test` 的模块**必须**在 root.zig 登记，否则其
+/// 测试被静默跳过（`zig test src/root.zig` 会报 "All 0 tests passed"）。本文件无需
+/// 因新增模块而改动（模块须先挂到 `lib_mod` 的 import 表）。
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -41,4 +42,25 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "运行 php-ast 单元测试");
     test_step.dependOn(&run_tests.step);
+
+    // 一致性对照工具（tools/parity_check.zig）：以 php-parser 测试子集为基准度量
+    // 本库接受面与诊断质量，产出 acceptance_report.txt 与 diagnostic_report.txt。
+    // 可执行（非 test）以支持命令行参数：`zig build check-parity -- <基准目录>`
+    // 用指定目录作基准并把报告写到该目录；无参数用库内 tests/third_party 基准、
+    // 报告写到仓库根。库经 `ast` 模块暴露给工具（addExecutable 无 `../` 越界限制）。
+    const parity_exe = b.addExecutable(.{
+        .name = "parity_check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/parity_check.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{ .{ .name = "ast", .module = lib_mod } },
+        }),
+    });
+    const run_parity = b.addRunArtifact(parity_exe);
+    if (b.args) |args| {
+        for (args) |a| run_parity.addArg(a);
+    }
+    const parity_step = b.step("check-parity", "与 php-parser 测试子集做一致性对照（接受面 + 诊断质量）");
+    parity_step.dependOn(&run_parity.step);
 }

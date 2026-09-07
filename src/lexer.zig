@@ -61,8 +61,9 @@ pub const Lexer = struct {
         const n = source.len;
 
         // 字符串插值状态机
-        var in_string: bool = false; // 处于 "..." 或 heredoc 内部
+        var in_string: bool = false; // 处于 "..." / heredoc / `...` 内部
         var is_heredoc: bool = false; // 当前是 heredoc/nowdoc（而非双引号）
+        var is_backtick: bool = false; // 当前是反引号 shell exec（结束符为 `）
         var string_interp: bool = true; // 是否启用插值（nowdoc 为 false）
         var interp_depth: usize = 0; // `{$...}` 花括号嵌套层数
         var bracket_depth: usize = 0; // 复杂变量 `$v[...]`/`$v(...)` 的括号层数
@@ -122,8 +123,16 @@ pub const Lexer = struct {
 
             // ===== 字符串字面量累积模式 =====
             if (literal_mode) {
+                // 反引号（shell exec）结束：转义 `\`` 由下方转义分支吃掉，不在此命中。
+                if (!is_heredoc and is_backtick and c == '`') {
+                    try flushPart.run(&part_start, i, gpa, out);
+                    try out.append(gpa, .{ .tag = .backtick, .start = i, .end = i + 1 });
+                    in_string = false;
+                    is_backtick = false;
+                    continue;
+                }
                 // 双引号结束
-                if (!is_heredoc and c == '"') {
+                if (!is_heredoc and !is_backtick and c == '"') {
                     try flushPart.run(&part_start, i, gpa, out);
                     try out.append(gpa, .{ .tag = .string_end, .start = i, .end = i + 1 });
                     in_string = false;
@@ -232,9 +241,13 @@ pub const Lexer = struct {
 
             // ===== 正常分词（顶层，或插值/括号内部）=====
 
-            // heredoc / nowdoc 起点：<<<LABEL（nowdoc 为 <<<'LABEL'）
-            if (!in_string and c == '<' and i + 2 < n and source[i + 1] == '<' and source[i + 2] == '<') {
-                var j = i + 3;
+            // heredoc / nowdoc 起点：<<<LABEL（nowdoc 为 <<<'LABEL'）。`b`/`B` 前缀
+            // `b<<<LABEL` 为 binary heredoc——前缀并入 string_start（与 b"" 同理）。
+            const b_pre = !in_string and (c == 'b' or c == 'B') and i + 3 < n and
+                source[i + 1] == '<' and source[i + 2] == '<' and source[i + 3] == '<';
+            if (!in_string and (b_pre or (c == '<' and i + 2 < n and source[i + 1] == '<' and source[i + 2] == '<'))) {
+                const h = if (b_pre) i + 1 else i; // `<<<` 起点
+                var j = h + 3;
                 var nowdoc = false;
                 if (j < n and source[j] == '\'') {
                     nowdoc = true;
@@ -246,9 +259,10 @@ pub const Lexer = struct {
                     const label = source[ls..j];
                     var e = j;
                     while (e < n and source[e] != '\n') : (e += 1) {}
-                    try out.append(gpa, .{ .tag = .string_start, .start = i, .end = i + 3 });
+                    try out.append(gpa, .{ .tag = .string_start, .start = i, .end = h + 3 });
                     in_string = true;
                     is_heredoc = true;
+                    is_backtick = false;
                     string_interp = !nowdoc;
                     interp_depth = 0;
                     bracket_depth = 0;
@@ -257,7 +271,8 @@ pub const Lexer = struct {
                     i = e;
                     continue;
                 }
-                // 非合法 heredoc：当作普通 `<` 继续（落入运算符扫描）
+                // 非合法 heredoc：b 前缀时 c 仍是标识符，落到下方标识符分支正常扫
+                // `b`（`<<<` 留待下一轮 heredoc 判定）；普通 `<` 则落入运算符扫描。
             }
 
             // 开标签 <?php 或 <?=
@@ -286,9 +301,12 @@ pub const Lexer = struct {
                 try out.append(gpa, .{ .tag = .close_tag, .start = i, .end = i + 2 });
                 i += 1;
                 // 扫描后续文本，遇下一个开标签 <? 之前整体作为 inline_html
+                // （文件尾无换行也须收全，不能把最后字符漏给正常分词）。
                 var j = i + 1;
-                while (j + 1 < n) : (j += 1) {
-                    if (source[j] == '<' and (source[j + 1] == '?' or (j + 2 < n and source[j + 1] == '=' and source[j + 2] == '>'))) {
+                while (j < n) : (j += 1) {
+                    if (source[j] == '<' and j + 1 < n and
+                        (source[j + 1] == '?' or (j + 2 < n and source[j + 1] == '=' and source[j + 2] == '>')))
+                    {
                         break;
                     }
                 }
@@ -324,12 +342,20 @@ pub const Lexer = struct {
                 continue;
             }
             if (c == '/' and i + 1 < n and source[i + 1] == '*') {
+                // 块注释扫到 `*/`；未闭合（PHP：吞掉其后全部内容）则延伸到文件尾
+                // ——否则闭合符（`}` 等）会被当成独立 token，使「块未闭合」的判定失真。
                 var e = i + 2;
-                while (e + 1 < n and !(source[e] == '*' and source[e + 1] == '/')) : (e += 1) {}
+                var closed = false;
+                while (e + 1 < n) : (e += 1) {
+                    if (source[e] == '*' and source[e + 1] == '/') {
+                        closed = true;
+                        break;
+                    }
+                }
                 const tag: Token.Tag = if (i + 2 < n and source[i + 1] == '*' and source[i + 2] == '*')
                     .doc_comment
                 else .comment;
-                const end = if (e + 1 < n) e + 2 else e;
+                const end = if (closed) e + 2 else n;
                 try out.append(gpa, .{ .tag = tag, .start = i, .end = end });
                 i = end - 1;
                 continue;
@@ -355,6 +381,7 @@ pub const Lexer = struct {
                 try out.append(gpa, .{ .tag = .string_start, .start = i, .end = i + 1 });
                 in_string = true;
                 is_heredoc = false;
+                is_backtick = false;
                 string_interp = true;
                 interp_depth = 0;
                 bracket_depth = 0;
@@ -362,16 +389,35 @@ pub const Lexer = struct {
                 continue;
             }
 
-            // 反引号（shell exec）：`...`
-            if (c == '`') {
-                var e = i + 1;
-                while (e < n and source[e] != '`') : (e += 1) {}
-                const content_end = e;
-                const end = if (e < n) e + 1 else e;
+            // 反引号（shell exec）：`...` 与双引号同走插值状态机（内容可含 $var、
+            // {$expr}、转义），结束符是未转义的反引号而非 `"`。此前把整段当作单块
+            // string_literal，含 `$A` 的 shell 内容丢了插值语义，且空串/转义反引号错位。
+            if (c == '`' and !in_string) {
                 try out.append(gpa, .{ .tag = .backtick, .start = i, .end = i + 1 });
-                try out.append(gpa, .{ .tag = .string_literal, .start = i + 1, .end = content_end });
-                try out.append(gpa, .{ .tag = .backtick, .start = content_end, .end = end });
-                i = end - 1;
+                in_string = true;
+                is_heredoc = false;
+                is_backtick = true;
+                string_interp = true;
+                interp_depth = 0;
+                bracket_depth = 0;
+                part_start = null;
+                continue;
+            }
+
+            // 前导点浮点 `.5`：`.` 后紧跟数字（区别于成员访问 `.` 运算符）。
+            if (c == '.' and i + 1 < n and isDigitChar(source[i + 1])) {
+                var e = i + 1;
+                while (e < n and (isDigitChar(source[e]) or source[e] == '_')) : (e += 1) {}
+                if (e < n and (source[e] == 'e' or source[e] == 'E')) {
+                    var f = e + 1;
+                    if (f < n and (source[f] == '+' or source[f] == '-')) f += 1;
+                    if (f < n and isDigitChar(source[f])) {
+                        e = f;
+                        while (e < n and isDigitChar(source[e])) : (e += 1) {}
+                    }
+                }
+                try out.append(gpa, .{ .tag = .float_literal, .start = i, .end = e });
+                i = e - 1;
                 continue;
             }
 
@@ -422,8 +468,9 @@ pub const Lexer = struct {
                         is_float = true;
                         continue;
                     }
-                    if ((ch == 'e' or ch == 'E') and !is_float) {
-                        // 指数须后跟数字或符号+数字，否则 `e` 是标识符前缀
+                    // 指数 `e`/`E`：已含小数点（`30.20e10`）同样可带指数；须后跟数字或
+                    // 符号+数字，否则 `e` 是标识符前缀（如 `1e` 后接非数字）。
+                    if (ch == 'e' or ch == 'E') {
                         if (e + 1 < n and isDigitChar(source[e + 1])) {
                             e += 1;
                             is_float = true;
@@ -443,6 +490,47 @@ pub const Lexer = struct {
                 const tag: Token.Tag = if (is_float) .float_literal else .int_literal;
                 try out.append(gpa, .{ .tag = tag, .start = i, .end = e });
                 i = e - 1;
+                continue;
+            }
+
+            // binary 字符串前缀：`b"..."` / `b'...'`（PHP b/B 前缀）。此前 `b` 被
+            // 标识符分支切出、引号再启字符串，导致 `b"$A"` 在 parser 层成相邻两
+            // 表达式报缺分号。前缀并入字符串：`b` + `"` 走插值状态机（string_start
+            // 起点在 b 上）；`b` + `'` 走单引号字面（不插值）。
+            if (!in_string and (c == 'b' or c == 'B') and i + 1 < n and
+                (source[i + 1] == '"' or source[i + 1] == '\''))
+            {
+                try out.append(gpa, .{ .tag = .string_start, .start = i, .end = i + 1 });
+                in_string = true;
+                is_heredoc = false;
+                is_backtick = false;
+                if (source[i + 1] == '"') {
+                    is_backtick = false;
+                    string_interp = true;
+                } else {
+                    // b'...'：仿单引号扫描为 string_literal（内容不含插值）
+                    var e = i + 2;
+                    while (e < n) : (e += 1) {
+                        if (source[e] == '\\' and e + 1 < n) {
+                            e += 1;
+                            continue;
+                        }
+                        if (source[e] == '\'') break;
+                    }
+                    const end = if (e < n) e + 1 else e;
+                    try out.append(gpa, .{ .tag = .string_literal, .start = i + 1, .end = end });
+                    in_string = false;
+                    is_backtick = false;
+                    i = end - 1;
+                }
+                if (in_string) {
+                    // b"..."：进入插值状态机。游标停在开引号上（i=b+1），循环自增后
+                    // 从内容首（b+2）扫描，开引号不触发字面模式的关串判定。
+                    interp_depth = 0;
+                    bracket_depth = 0;
+                    part_start = null;
+                    i = i + 1;
+                }
                 continue;
             }
 
@@ -528,6 +616,48 @@ test "lexer :: 数字字面量 :: 整数与浮点数区分" {
     try std.testing.expect(hasTag(f.items, .float_literal));
 }
 
+test "lexer :: 数字字面量 :: 含小数点时仍吃 e 指数（`30.20e10` 不截断）" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "<?php 30.20e10; 300.200e100; 1e10;");
+    defer t.deinit(gpa);
+    // 三个浮点字面量，且不应出现 identifier（`e10` 若被截断会表现为 identifier）
+    var n: usize = 0;
+    for (t.items) |tg| {
+        if (tg == .float_literal) n += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 3), n);
+    try std.testing.expect(!hasTag(t.items, .identifier));
+}
+
+test "lexer :: binary heredoc :: `b<<<LABEL` 前缀并归 string_start" {
+    const gpa = std.testing.allocator;
+    var t = try tokenizeTags(gpa, "<?php $a = b<<<EOS\nBinary\nEOS;\n");
+    defer t.deinit(gpa);
+    try std.testing.expect(hasTag(t.items, .string_start));
+    try std.testing.expect(!hasTag(t.items, .identifier)); // `b` 未被单独切出
+}
+
+test "lexer :: inline_html :: 文件尾无换行也收全（hashbang 段形态）" {
+    const gpa = std.testing.allocator;
+    const src: [:0]const u8 = "#!/usr/bin/env php\n<?php echo 1; ?>\n#!/usr/bin/env php";
+    var toks = Token.TokenList{};
+    defer toks.deinit(gpa);
+    try Lexer.tokenize(gpa, src, &toks);
+    var slice = toks.toOwnedSlice();
+    defer slice.deinit(gpa);
+    const starts = slice.items(.start);
+    const ends = slice.items(.end);
+    const tags = slice.items(.tag);
+    // 末尾 hashbang 行整体为一个 inline_html，且收全到最后一个字符 `p`
+    var found = false;
+    for (tags, starts, ends) |tg, s, e| {
+        if (tg == .inline_html and std.mem.endsWith(u8, src[s..e], "#!/usr/bin/env php")) {
+            found = true;
+        }
+    }
+    try std.testing.expect(found);
+}
+
 test "lexer :: 标识符与变量 :: $ 前缀产出 variable" {
     const gpa = std.testing.allocator;
     var t = try tokenizeTags(gpa, "<?php $foo BAR;");
@@ -560,6 +690,18 @@ test "lexer :: 非法字符 :: 产出 invalid 且不崩溃" {
     var t = try tokenizeTags(gpa, "<?php \x01 ;");
     defer t.deinit(gpa);
     try std.testing.expect(hasTag(t.items, .invalid));
+}
+
+test "lexer :: 未终止块注释 :: 延伸到文件尾（吞掉其后闭合符）" {
+    const gpa = std.testing.allocator;
+    // PHP 未闭合的 `/*` 吞掉其后全部内容：`}` 不应再作为独立 token 产出，
+    // 否则「块未闭合」的判定（unexpected_eof）会失真。
+    var t = try tokenizeTags(gpa, "<?php if ($b) {\n  /* unterminated\n}");
+    defer t.deinit(gpa);
+    try std.testing.expect(!hasTag(t.items, .rbrace));
+    var t2 = try tokenizeTags(gpa, "<?php /* ok */ $a;");
+    defer t2.deinit(gpa);
+    try std.testing.expect(hasTag(t2.items, .variable));
 }
 
 test "lexer :: 注释 :: 行注释与块注释均被切出" {

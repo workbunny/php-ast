@@ -82,14 +82,63 @@ pub const ListRange = struct {
 /// （多错误收集，便于编辑器/lint 一次取得全部诊断）。
 pub const Error = struct {
     tag: Error.Tag,
+    /// 诊断区间起点 token（含）。
     token: TokenIndex,
+    /// 诊断区间终点 token（含）。单 token 诊断时与 `token` 相同。
+    token_end: TokenIndex,
+    /// 附加 token：消息需引用具体文本时指向它（保留名、修饰符名、钩子名、方法名等）。
+    /// 不需要时与 `token` 相同。
+    aux: TokenIndex,
+    /// 数值参数（如非法字符的 ASCII 码、期望缩进级别）；不使用恒为 0。
+    data: u32,
     /// 仅 `unsupported_version` 使用：该节点语法要求的 PHP 版本；
     /// 其余错误恒为 `BASE_VERSION`(id=0)，读取无意义。
     required: PhpVersion,
 
-    /// 把错误渲染成可读文案。对 `unsupported_version` 写明「该语法要求的版本」
-    /// 与「parse 时指定的目标版本」，下游据此即可定位用错了哪一版语法；
-    /// 其余错误仅给出其 `Tag` 名。`buf` 由调用方提供，返回其有效切片。
+    /// token 的 php-parser 显示名：`Syntax error, unexpected <X>` 的 `<X>`。
+    ///
+    /// 规则：EOF 显 `EOF`；标识符显 `T_STRING`、变量显 `T_VARIABLE`；关键字显
+    /// `T_<大写文本>`（PHP token 名即「T_ + 关键字大写」，除个别特例下表单独处理）；
+    /// 运算符特判（`->` 为 T_OBJECT_OPERATOR 等）；其余符号显 `'<原文>'`。
+    /// `out` 由调用方提供，返回其有效切片。
+    pub fn tokenDisplayName(tree: *const Ast, tok: TokenIndex, out: []u8) []const u8 {
+        const tag = tree.tokenTag(tok);
+        const text = tree.tokenSlice(tok);
+        return switch (tag) {
+            .eof => "EOF",
+            .identifier => "T_STRING",
+            .variable => "T_VARIABLE",
+            .arrow => "T_OBJECT_OPERATOR",
+            .double_colon => "T_PAAMAYIM_NEKUDOTAYIM",
+            .nullsafe_arrow => "T_NULLSAFE_OBJECT_OPERATOR",
+            .ampersand => "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG",
+            .ellipsis => "T_ELLIPSIS",
+            else => if (tag.isKeyword()) blk: {
+                // PHP 关键字 token 名 = `T_` + 大写。源码可能带大小写（`Break`），
+                // 统一按关键字表的小写文本大写输出。
+                var lower: ?[]const u8 = null;
+                for (Token.keywords) |k| {
+                    if (k.tag == tag) {
+                        lower = k.t;
+                        break;
+                    }
+                }
+                const kw_text = lower orelse text;
+                var tmp: [64]u8 = undefined;
+                if (kw_text.len < tmp.len) {
+                    for (kw_text, 0..) |ch, i| tmp[i] = std.ascii.toUpper(ch);
+                    return std.fmt.bufPrint(out, "T_{s}", .{tmp[0..kw_text.len]}) catch "T_";
+                }
+                break :blk "'{s}'";
+            } else std.fmt.bufPrint(out, "'{s}'", .{text}) catch "'?'",
+        };
+    }
+
+    /// 把错误渲染成 php-parser 风格文案：
+    /// `"<消息> from <起行>:<起列> to <止行>:<止列>"`（对齐
+    /// `Error::getMessageWithColumnInfo()`，行列均 1 基、列为字节偏移）。
+    /// `unsupported_version` 单独写明「语法要求版本」与「目标版本」；
+    /// `buf` 由调用方提供，返回其有效切片。
     pub fn format(self: Error, tree: *const Ast, buf: []u8) []const u8 {
         if (self.tag == .unsupported_version) {
             const r = self.required;
@@ -104,7 +153,129 @@ pub const Error = struct {
                 },
             ) catch "unsupported version";
         }
-        return std.fmt.bufPrint(buf, "{s}", .{@tagName(self.tag)}) catch "parse error";
+        // 个别词法消息自含位置、不带 `from..to` 后缀（php-parser 原样消息）。
+        if (self.tag == .invalid_utf8_codepoint) {
+            const loc = tree.tokenLocation(0, self.token);
+            return std.fmt.bufPrint(
+                buf,
+                "Invalid UTF-8 codepoint escape sequence: Codepoint too large on line {d}",
+                .{loc.line + 1},
+            ) catch "Invalid UTF-8 codepoint escape sequence";
+        }
+        const sl = tree.tokenLocation(0, self.token);
+        const el = tree.tokenLocation(0, self.token_end);
+        // 结束列：php-parser 的 `endFilePos` 是「最后一个字符所在偏移」（含），
+        // 故列 = 末字符偏移 - 行首。零宽 token（如 EOF，end == start）取其后一位，
+        // 否则未终止注释等延伸到文件尾的诊断会少算一列。
+        const te = tree.tokenEnd(self.token_end);
+        const ts = tree.tokenStart(self.token_end);
+        const end_col = (if (te > ts) te else ts + 1) - el.line_start;
+        // 消息正文先渲染进独立缓冲：`rawMessage` 与最终 `bufPrint` 不可共用缓冲
+        // （否则写入目标与读取源重叠）。
+        var mbuf: [256]u8 = undefined;
+        const msg = self.rawMessage(tree, &mbuf);
+        return std.fmt.bufPrint(buf, "{s} from {d}:{d} to {d}:{d}", .{
+            msg,
+            sl.line + 1,
+            sl.column + 1,
+            el.line + 1,
+            end_col,
+        }) catch "parse error";
+    }
+
+    /// 消息正文（不含位置后缀）。语义/词法类为固定文案，需引用源码文本的经
+    /// `aux`/`data` 取用；语法类为 `Syntax error, unexpected <token>`。
+    /// `buf` 由调用方提供，返回其有效切片。
+    pub fn rawMessage(self: Error, tree: *const Ast, buf: []u8) []const u8 {
+        const text = tree.tokenSlice(self.aux);
+        return switch (self.tag) {
+            // ---- 语法类：`Syntax error, unexpected <token>`（php-parser 报在意外
+            // token 上；`self.token` 即该 token）。----
+            .expected_variable => blk: {
+                // 变量名位（`$`/`::`/`->` 后需变量）：php-parser 恒报
+                // `unexpected X, expecting T_VARIABLE or '{' or '$'`（simple_variable
+                // 只接受这三种起始）。
+                var nbuf: [64]u8 = undefined;
+                const name = tokenDisplayName(tree, self.token, &nbuf);
+                break :blk std.fmt.bufPrint(
+                    buf,
+                    "Syntax error, unexpected {s}, expecting T_VARIABLE or '{{' or '$'",
+                    .{name},
+                ) catch "Syntax error";
+            },
+            .expected_token, .expected_semi, .expected_expr, .expected_identifier,
+            .expected_lbrace, .expected_rbrace, .expected_rparen, .expected_lbracket,
+            .unexpected_eof,
+            => blk: {
+                // token 显示名先用独立缓冲渲染（不能与 bufPrint 的目标共用 buf）
+                var nbuf: [64]u8 = undefined;
+                const name = tokenDisplayName(tree, self.token, &nbuf);
+                break :blk std.fmt.bufPrint(buf, "Syntax error, unexpected {s}", .{name}) catch "Syntax error";
+            },
+
+            // 语义：修饰符
+            .multiple_access_modifiers => "Multiple access type modifiers are not allowed",
+            .multiple_readonly_modifiers => "Multiple readonly modifiers are not allowed",
+            .multiple_abstract_modifiers => "Multiple abstract modifiers are not allowed",
+            .multiple_static_modifiers => "Multiple static modifiers are not allowed",
+            .multiple_final_modifiers => "Multiple final modifiers are not allowed",
+            .final_on_abstract_class => "Cannot use the final modifier on an abstract class",
+            .final_on_abstract_member => "Cannot use the final modifier on an abstract class member",
+            .invalid_const_modifier => std.fmt.bufPrint(buf, "Cannot use '{s}' as constant modifier", .{text}) catch "Invalid constant modifier",
+            .readonly_method => std.fmt.bufPrint(buf, "Method {s}() cannot be readonly", .{text}) catch "Methods cannot be readonly",
+            .hook_modifier => std.fmt.bufPrint(buf, "Cannot use the {s} modifier on a property hook", .{text}) catch "Invalid hook modifier",
+            .unknown_hook => std.fmt.bufPrint(buf, "Unknown hook \"{s}\", expected \"get\" or \"set\"", .{text}) catch "Unknown hook",
+            // 语义：魔法方法 static
+            .static_constructor => std.fmt.bufPrint(buf, "Constructor {s}() cannot be static", .{text}) catch "Constructor cannot be static",
+            .static_destructor => std.fmt.bufPrint(buf, "Destructor {s}() cannot be static", .{text}) catch "Destructor cannot be static",
+            .static_clone => std.fmt.bufPrint(buf, "Clone method {s}() cannot be static", .{text}) catch "Clone method cannot be static",
+            // 语义：参数与常量
+            .void_parameter => "void cannot be used as a parameter type",
+            .variadic_default => "Variadic parameter cannot have a default value",
+            .const_attr_multi => "Cannot use attributes on multiple constants at once",
+            .trailing_comma => "A trailing comma is not allowed here",
+            // 语义：属性钩子
+            .hook_empty => "Property hook list cannot be empty",
+            .hook_get_params => "get hook must not have a parameter list",
+            .hook_multi_property => "Cannot use hooks when declaring multiple properties",
+            // 语义：名字
+            .reserved_class_name => std.fmt.bufPrint(buf, "Cannot use '{s}' as class name as it is reserved", .{text}) catch "Reserved class name",
+            .reserved_interface_name => std.fmt.bufPrint(buf, "Cannot use '{s}' as interface name as it is reserved", .{text}) catch "Reserved interface name",
+            .special_class_name_alias => std.fmt.bufPrint(buf, "Cannot use {s} as {s} because '{s}' is a special class name", .{ tree.tokenSlice(self.data), text, text }) catch "Special class name alias",
+            // 语义：语句与作用域
+            .try_without_catch => "Cannot use try without catch or finally",
+            .halt_not_outermost => "__HALT_COMPILER() can only be used from the outermost scope",
+            .namespace_nested => "Namespace declarations cannot be nested",
+            .namespace_mixed => "Cannot mix bracketed namespace declarations with unbracketed namespace declarations",
+            .namespace_not_first => "Namespace declaration statement has to be the very first statement in the script",
+            .namespace_code_outside => "No code may exist outside of namespace {}",
+            .assign_new_by_ref => "Cannot assign new by reference",
+            .array_empty_element => "Cannot use empty array elements in arrays",
+            .pipe_arrow_unparenthesized => "Arrow functions on the right hand side of |> must be parenthesized",
+            .non_simple_variable => "Non-simple variables are forbidden in PHP 7",
+            // 词法/解码
+            .unterminated_comment => "Unterminated comment",
+            .unexpected_character => std.fmt.bufPrint(buf, "Unexpected character \"{s}\" (ASCII {d})", .{ text, self.data }) catch "Unexpected character",
+            .unexpected_null_byte => "Unexpected null byte",
+            .invalid_numeric_literal => "Invalid numeric literal",
+            .invalid_numeric_separator => "Invalid numeric separator",
+            .invalid_indentation_mixed => "Invalid indentation - tabs and spaces cannot be mixed",
+            .invalid_indentation_level => std.fmt.bufPrint(buf, "Invalid body indentation level (expecting an indentation level of at least {d})", .{self.data}) catch "Invalid body indentation level",
+            .short_echo_identifier => "Cannot use \"<?=\" as an identifier",
+            .invalid_utf8_codepoint => blk: {
+                // 该消息自含位置（`on line N`），`rawMessage` 即完整句
+                // （`format` 对同 tag 不再追加 from..to 后缀）。
+                const loc = tree.tokenLocation(0, self.token);
+                break :blk std.fmt.bufPrint(
+                    buf,
+                    "Invalid UTF-8 codepoint escape sequence: Codepoint too large on line {d}",
+                    .{loc.line + 1},
+                ) catch "Invalid UTF-8 codepoint escape sequence";
+            },
+            // 语法类（`Syntax error, unexpected <token>`）由 `unexpected_token` 系列
+            // 表达，消息待补 token 名表；此处先按 tag 名兜底。
+            else => @tagName(self.tag),
+        };
     }
 
     /// 错误种类枚举。每个变体对应一种具体的语法期望失败。
@@ -122,6 +293,104 @@ pub const Error = struct {
         lex_error,
         /// 语法构造的引入版本高于 `parse` 指定的目标版本（版本门控）。
         unsupported_version,
+
+        // ---- 引擎级语义诊断（拒绝面，不属语法缺口）----
+        // 每个变体对应一条 php-parser 消息（`rawMessage` 内一一映射），故按消息族
+        // 细分：同一类违规但文案不同（如「重复可见性」与「重复 static」）是不同 Tag。
+        //
+        // 解析期就地（信息在修饰符收集循环中被丢弃，无法事后恢复；php-parser 同样
+        // 在语法期 recover 处理）：见 `parsePropertyModifiers`/`parseMethod` 等修饰符
+        // 入口。合法代码永不触发。
+        /// 重复可见性修饰符（`public public $a`）。
+        multiple_access_modifiers,
+        /// 重复 `readonly`。
+        multiple_readonly_modifiers,
+        /// 重复 `abstract`。
+        multiple_abstract_modifiers,
+        /// 重复 `static`。
+        multiple_static_modifiers,
+        /// 重复 `final`。
+        multiple_final_modifiers,
+        /// `abstract` 类上的 `final`。
+        final_on_abstract_class,
+        /// `abstract` 类成员上的 `final`。
+        final_on_abstract_member,
+        /// 类常量上的非法修饰符（`static const` 等，`aux` 指向该修饰符）。
+        invalid_const_modifier,
+        /// 方法不能为 readonly（仅属性可为 readonly），`aux` 指向方法名。
+        readonly_method,
+        /// 属性钩子上的非法修饰符（`aux` 指向该修饰符）。
+        hook_modifier,
+        /// 未知钩子名（`aux` 指向钩子名）。
+        unknown_hook,
+        // 以下由旁路校验层 `semantic.check`（`src/semantic.zig`）报告——默认 parse
+        // 不执行（parse 宽松），调用方按需开启。判据需整树/上下文/版本。
+        /// `__construct` 不能 static。
+        static_constructor,
+        /// `__destruct` 不能 static。
+        static_destructor,
+        /// `__clone` 不能 static。
+        static_clone,
+        /// void 不能作参数类型。
+        void_parameter,
+        /// 变参（`...$x`）不能带默认值。
+        variadic_default,
+        /// try 块必须带 catch 或 finally。
+        try_without_catch,
+        /// 属性钩子列表 `{ }` 不能为空。
+        hook_empty,
+        /// get 钩子不能带参数表。
+        hook_get_params,
+        /// 声明多个属性时不能带钩子。
+        hook_multi_property,
+        /// 一条声明内的多个常量带注解（注解只能用于首个）。
+        const_attr_multi,
+        /// 保留名作类名（`aux` 指向该名字）。
+        reserved_class_name,
+        /// 保留名作接口名（`aux` 指向该名字）。
+        reserved_interface_name,
+        /// `use ... as self` 等特殊类名别名（`aux` 指向别名）。
+        special_class_name_alias,
+        /// __HALT_COMPILER() 只能在最外层作用域。
+        halt_not_outermost,
+        /// namespace 声明不能嵌套。
+        namespace_nested,
+        /// bracketed 与 unbracketed namespace 声明不能混用。
+        namespace_mixed,
+        /// unbracketed namespace 必须是脚本首个语句（declare(strict_types) 除外）。
+        namespace_not_first,
+        /// 出现 bracketed namespace 后，脚本其余部分不得再有代码。
+        namespace_code_outside,
+        /// `$a =& new B` 自 PHP 7.0 起禁止。
+        assign_new_by_ref,
+        /// 数组字面量空槽 `[1, , 2]` 自 PHP 8.0 起禁止（解构上下文合法）。
+        array_empty_element,
+        /// `|>` 右侧的箭头函数必须加括号（8.5）。
+        pipe_arrow_unparenthesized,
+        /// 尾随逗号不被允许（`[1,]` 等不接受尾逗号的位置）。
+        trailing_comma,
+        /// 非简单变量（`${expr}` 形态）在 PHP 7 起被禁止。
+        non_simple_variable,
+
+        // ---- 词法/解码诊断（`lexScanDiag`，解析前扫 token 流原文）----
+        /// 未终止块注释。
+        unterminated_comment,
+        /// 非法字符（`data` 存 ASCII 码，`aux` 指向该字符 token）。
+        unexpected_character,
+        /// 空字节。
+        unexpected_null_byte,
+        /// 非法数字字面量（前导零含 8/9 等）。
+        invalid_numeric_literal,
+        /// 非法数字分隔符 `_`。
+        invalid_numeric_separator,
+        /// heredoc 缩进混用 tab 与空格。
+        invalid_indentation_mixed,
+        /// heredoc body 缩进不足（`data` 为最低要求级别）。
+        invalid_indentation_level,
+        /// `<?=` 被当标识符使用。
+        short_echo_identifier,
+        /// `\u{...}` 码点越界。
+        invalid_utf8_codepoint,
     };
 };
 
@@ -150,6 +419,7 @@ pub const Node = struct {
         stmt_trait,
         stmt_case,
         stmt_property,
+        property_item, // 属性声明项：name token + optional default（多属性 `$a=1,$b=2` 各一项）
         property_hook,
         stmt_namespace,
         stmt_return,
@@ -213,6 +483,8 @@ pub const Node = struct {
         expr_match,
         expr_match_arm,
         expr_first_class_callable,
+        expr_variadic_placeholder, // first-class callable 的 `...` 占位（方法/静态调用/new 的 args 元素）
+        expr_array_hole, // 解构空槽 `[ , $a]`（list/数组赋值左侧，php-parser ArrayItem value=null）
         expr_closure,
         expr_arrow_function,
         expr_clone,
@@ -273,6 +545,9 @@ pub const Node = struct {
         node_and_range: struct { node: Index, range: SubRange },
         extra_and_node: struct { ExtraIndex, Index },
         extra_and_opt_node: struct { ExtraIndex, OptionalIndex },
+        /// 区间 + 尾部定界符 token：用于「列表 + 闭合符」的节点（数组字面量
+        /// `[...]`/`array(...)`、`list(...)`），闭合符供 `lastToken` 取全区间。
+        extra_and_token: struct { SubRange, TokenIndex },
         node_and_token: struct { Index, TokenIndex },
         token_and_node: struct { TokenIndex, Index },
         token_and_token: struct { TokenIndex, TokenIndex },
@@ -305,7 +580,7 @@ pub fn tagVersion(tag: Node.Tag) PhpVersion {
     return switch (tag) {
         // 8.1 引入的新节点类型
         .stmt_enum, .stmt_case => PhpVersion.fromComponents(8, 1),
-        .expr_first_class_callable => PhpVersion.fromComponents(8, 1),
+        .expr_first_class_callable, .expr_variadic_placeholder => PhpVersion.fromComponents(8, 1),
         .type_intersection => PhpVersion.fromComponents(8, 1),
         // 属性钩子节点本身即 8.4 引入
         .property_hook => PhpVersion.fromComponents(8, 4),
@@ -485,13 +760,18 @@ pub const Ast = struct {
         switch (tree.nodeTag(node)) {
             // 区间型子节点（列表 / 多表达式节点）
             .root,
-            .expr_array,
             .expr_isset,
-            .expr_empty,
-            .expr_list,
             .expr_encapsed,
+            .expr_shell_exec,
             .attr_group,
             => try emitRange(tree, data.extra_range, ctx, onChild),
+            // 数组字面量与 list 解构：区间 + 闭合符（`]`/`)`），闭合符供
+            // `lastToken` 覆盖完整源码区间用（见 `trailingDelimiter`）。
+            .expr_array, .expr_list => try emitRange(tree, data.extra_and_token[0], ctx, onChild),
+            .expr_empty => {
+                // `empty($x)` 单一操作数（与 expr_isset 的多元素列表不同）。
+                try onChild(ctx, data.node);
+            },
 
             // 单一可选子表达式
             .expr_exit => try emitOpt(data.opt_node, ctx, onChild),
@@ -585,10 +865,11 @@ pub const Ast = struct {
             .stmt_property => {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents);
                 try emitOpt(c.type, ctx, onChild);
-                try emitOpt(c.default, ctx, onChild);
+                try emitRange(tree, c.props, ctx, onChild);
                 try emitRange(tree, c.hooks, ctx, onChild);
                 try emitRange(tree, c.attrs, ctx, onChild);
             },
+            .property_item => try emitOpt(data.opt_node_and_token[0], ctx, onChild),
             .stmt_case => {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents);
                 try emitOpt(c.value, ctx, onChild);
@@ -621,7 +902,11 @@ pub const Ast = struct {
             .stmt_expression, .stmt_throw => try onChild(ctx, data.node_and_token[0]),
             // 列表型语句：列表经 Components 承载（尾部分号亦在其中）
             .stmt_echo => try emitRange(tree, tree.extraData(data.extra, stmt.EchoComponents).exprs, ctx, onChild),
-            .stmt_const => try emitRange(tree, tree.extraData(data.extra, stmt.ConstComponents).decls, ctx, onChild),
+            .stmt_const => {
+                const c = tree.extraData(data.extra, stmt.ConstComponents);
+                try emitRange(tree, c.attrs, ctx, onChild);
+                try emitRange(tree, c.decls, ctx, onChild);
+            },
             .stmt_global => try emitRange(tree, tree.extraData(data.extra, stmt.GlobalComponents).vars, ctx, onChild),
             .stmt_static => try emitRange(tree, tree.extraData(data.extra, stmt.StaticComponents).vars, ctx, onChild),
             .stmt_unset => try emitRange(tree, tree.extraData(data.extra, stmt.UnsetComponents).vars, ctx, onChild),
@@ -664,8 +949,8 @@ pub const Ast = struct {
             .stmt_goto, .stmt_label, .stmt_halt, .inline_html, .stmt_nop, .stmt_error => {},
             .static_var => try emitOpt(tree.extraData(data.extra, stmt.StaticVarComponents).default, ctx, onChild),
             .property_hook => {
-                const c = tree.extraData(data.extra_and_node[0], decl.PropertyHookComponents);
-                try onChild(ctx, data.extra_and_node[1]);
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.PropertyHookComponents);
+                try emitOpt(data.extra_and_opt_node[1], ctx, onChild); // 体（abstract 钩子为空）
                 try emitRange(tree, c.params, ctx, onChild);
                 try emitRange(tree, c.attrs, ctx, onChild);
             },
@@ -690,6 +975,7 @@ pub const Ast = struct {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.ParamComponents);
                 try emitOpt(c.type, ctx, onChild);
                 try emitOpt(c.default, ctx, onChild);
+                try emitRange(tree, c.hooks, ctx, onChild);
                 try emitRange(tree, c.attrs, ctx, onChild);
             },
 
@@ -711,7 +997,8 @@ pub const Ast = struct {
             .expr_string,
             .expr_string_part,
             .expr_magic_const,
-            .expr_shell_exec,
+            .expr_variadic_placeholder,
+            .expr_array_hole,
             => {},
 
             // 调用类（callee + 参数列表）
@@ -741,8 +1028,9 @@ pub const Ast = struct {
                 try emitOpt(c.key, ctx, onChild);
             },
             .expr_clone => {
-                try onChild(ctx, data.node_and_opt_node[0]);
-                try emitOpt(data.node_and_opt_node[1], ctx, onChild);
+                // `clone $x` 一元：子节点即操作数。8.5 括号式 `clone($x, withProperties:)`
+                // 走 FuncCall 路径（见 parser_expr.zig kw_clone），不会产出 expr_clone。
+                try onChild(ctx, data.node);
             },
 
             // 双目 / 赋值 / 访问类（node_and_node）
@@ -794,12 +1082,14 @@ pub const Ast = struct {
                 try emitRange(tree, c.params, ctx, onChild);
                 try emitOpt(c.ret, ctx, onChild);
                 try onChild(ctx, c.body);
+                try emitRange(tree, c.attrs, ctx, onChild);
             },
             .expr_arrow_function => {
                 const c = tree.extraData(data.extra, expr.ArrowFunctionComponents);
                 try emitRange(tree, c.params, ctx, onChild);
                 try emitOpt(c.ret, ctx, onChild);
                 try onChild(ctx, c.body);
+                try emitRange(tree, c.attrs, ctx, onChild);
             },
         }
     }
@@ -849,7 +1139,14 @@ pub const Ast = struct {
             .stmt_trait,
             .stmt_enum,
             => tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents).name,
-            .stmt_property => tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents).name,
+            .stmt_property => blk: {
+                const c = tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents);
+                if (c.props.start == c.props.end) break :blk null;
+                // props 为 addNodeList 连续节点，首项即 property_item：名字在其 opt_node_and_token[1]
+                const first_item: Index = @enumFromInt(tree.extra_data[@intFromEnum(c.props.start)]);
+                break :blk tree.nodeData(first_item).opt_node_and_token[1];
+            },
+            .property_item => data.opt_node_and_token[1],
             .stmt_class_const => blk: {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents);
                 if (c.decls.start == c.decls.end) break :blk null;
@@ -891,6 +1188,9 @@ pub const Ast = struct {
             .stmt_property => tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents).semi,
             .stmt_class_const => tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents).semi,
             .stmt_case => tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents).semi,
+
+            // 数组字面量 `[...]` / `array(...)` / `list(...)` 的闭合符
+            .expr_array, .expr_list => data.extra_and_token[1],
 
             // 限定名的 `data.token` 是末段（如 `Foo\Bar` 的 `Bar`），必须计入区间，
             // 否则名字只覆盖到首段，下游按区间取名字文本会得到 `Foo`。
@@ -1001,6 +1301,268 @@ pub const Ast = struct {
     }
 };
 
+/// 追加一条词法诊断（`lex_error`，单 token 区间）。
+fn addLexError(gpa: std.mem.Allocator, errors: *std.ArrayList(Error), token: TokenIndex) !void {
+    try addLexErrorEx(gpa, errors, .lex_error, token, token, token, 0);
+}
+
+/// 追加一条词法/解码诊断（可指定消息族、区间、附加 token 与数值参数）。
+fn addLexErrorEx(
+    gpa: std.mem.Allocator,
+    errors: *std.ArrayList(Error),
+    tag: Error.Tag,
+    start: TokenIndex,
+    end: TokenIndex,
+    aux: TokenIndex,
+    data: u32,
+) !void {
+    try errors.append(gpa, .{
+        .tag = tag,
+        .token = start,
+        .token_end = end,
+        .aux = aux,
+        .data = data,
+        .required = BASE_VERSION,
+    });
+}
+
+/// 词法后置诊断：一次扫描 token 流，把「需看原文才能判定」的词法错误收集为
+/// `lex_error`。判定项：
+/// - `.invalid` token：lexer 无法归类的字符（控制字符 / 非 UTF-8 字节等）；
+/// - `.comment` / `.doc_comment` 以 `/*` 开头但原文不含 `*/`：未终止注释；
+/// - 数字字面量：前导零十进制（`0787`）、非法 `_` 分隔（连续/首尾）；
+/// - 转义串（双引号 / heredoc / 反引号，nowdoc 除外）内 `\u{...}` 码点越界
+///   （PHP 7.0 起，> 0x10FFFF 报 Invalid UTF-8 codepoint）；
+/// - heredoc / nowdoc（PHP 7.3 flexible）body 缩进违规：行首 tab/space 混用，
+///   行首缩进少于结束标签缩进。
+/// 不修改 token 流，不中断解析（收集式模型）。
+fn lexScanDiag(
+    gpa: std.mem.Allocator,
+    source: [:0]const u8,
+    tokens: Token.TokenList.Slice,
+    version: PhpVersion,
+    errors: *std.ArrayList(Error),
+) !void {
+    const starts = tokens.items(.start);
+    const ends = tokens.items(.end);
+    const tags = tokens.items(.tag);
+
+    // 当前打开的字符串语境（无嵌套，单一状态跟踪即可）：
+    // - .dq：双引号 / b" / 反引号——内容做 \u{} 转义（v7.0+）；
+    // - .heredoc：插值 heredoc——内容做 \u{} 转义 + flexible 缩进校验（v7.3+）；
+    // - .nowdoc：内容原样——既不转义也不移除缩进，但 flexible 缩进校验照做；
+    // - .none：字符串之外。
+    const StrCtx = enum { none, dq, heredoc, nowdoc };
+    var ctx: StrCtx = .none;
+    var heredoc_body_start: usize = 0; // heredoc body 首行行首偏移（结束标签行换行后）
+
+    var i: usize = 0;
+    while (i < starts.len and tags[i] != .eof) : (i += 1) {
+        const s = source[starts[i]..ends[i]];
+        const ti: TokenIndex = @intCast(i);
+        switch (tags[i]) {
+            .invalid => blk: {
+                // 非法字符：消息含字符原文与 ASCII 码（空字节另归一类）
+                const b = if (s.len > 0) s[0] else 0;
+                const tag: Error.Tag = if (b == 0) .unexpected_null_byte else .unexpected_character;
+                try addLexErrorEx(gpa, errors, tag, ti, ti, ti, b);
+                break :blk;
+            },
+            .comment, .doc_comment => {
+                // 块注释未终止：以 /* 开头（含 /**）且全段无 */。行注释（// #）无闭合
+                // 概念，不在此列。
+                const is_block = std.mem.startsWith(u8, s, "/*") or std.mem.startsWith(u8, s, "/**");
+                if (is_block and std.mem.indexOf(u8, s, "*/") == null) {
+                    // 未终止注释延伸到文件尾（php-parser 报至 EOF）。其后是否补报
+                    // `unexpected EOF` 取决于是否存在未闭合结构——那是语法层的事，
+                    // 由 `parseBlock` 等在 EOF 处判定（见 `.unexpected_eof`）。
+                    const last: TokenIndex = @intCast(starts.len - 1);
+                    try addLexErrorEx(gpa, errors, .unterminated_comment, ti, last, ti, 0);
+                }
+            },
+            .int_literal, .float_literal => {
+                // `_` 分隔非法：连续 `__` 或位于字面量首/尾（`1_`、`_1`、`1__2`）。
+                if (std.mem.indexOfScalar(u8, s, '_') != null) {
+                    if (s[0] == '_' or s[s.len - 1] == '_' or std.mem.indexOf(u8, s, "__") != null) {
+                        try addLexErrorEx(gpa, errors, .invalid_numeric_separator, ti, ti, ti, 0);
+                    }
+                }
+                // 非法前导零整数（PHP 7.0 起）：`0` 开头、无 0x/0b/0o 前缀的整数字面量
+                // 中含 8/9 即报 invalid numeric literal（`0787`、`089`）；`000`/`0777`
+                // 是合法八进制。对齐 php-parser（依赖宿主 PHP 词法）：0 前缀含 8/9 的
+                // 数字按十进制读，若十进制值溢出 u64（如 `0177777777777777777777787`）
+                // host 归为浮点 token（DNUMBER）、走 Float 解析不报；不溢出（LNUMBER）
+                // 才报。8 出现与否对十进制溢出判定无影响，仅作为是否可能报错的标记。
+                if (tags[i] == .int_literal and s.len >= 2 and s[0] == '0' and version.id >= 70000) {
+                    const pfx = s[1] == 'x' or s[1] == 'X' or s[1] == 'b' or s[1] == 'B' or
+                        s[1] == 'o' or s[1] == 'O';
+                    if (!pfx) {
+                        var acc: u64 = 0;
+                        var overflow = false;
+                        var has_89 = false;
+                        for (s[1..]) |ch| {
+                            if (ch == '_') continue;
+                            if (ch == '8' or ch == '9') has_89 = true;
+                            if (!overflow) {
+                                acc = std.math.mul(u64, acc, 10) catch blk: {
+                                    overflow = true;
+                                    break :blk acc;
+                                };
+                                acc = std.math.add(u64, acc, ch - '0') catch blk: {
+                                    overflow = true;
+                                    break :blk acc;
+                                };
+                            }
+                        }
+                        if (has_89 and !overflow) {
+                            try addLexErrorEx(gpa, errors, .invalid_numeric_literal, ti, ti, ti, 0);
+                        }
+                    }
+                }
+            },
+            .string_start => {
+                if (std.mem.startsWith(u8, s, "<<<")) {
+                    // heredoc / nowdoc：`<<<'LABEL'` 是 nowdoc（引号紧跟 <<<）。
+                    ctx = if (starts[i] + 3 < source.len and source[starts[i] + 3] == '\'')
+                        .nowdoc
+                    else
+                        .heredoc;
+                    // body 起点：结束标签行（label）的换行之后。
+                    var e = ends[i];
+                    while (e < source.len and source[e] != '\n') : (e += 1) {}
+                    heredoc_body_start = if (e < source.len) e + 1 else e;
+                } else {
+                    ctx = .dq; // 双引号 / b" 前缀
+                }
+            },
+            .string_end => {
+                // flexible heredoc 缩进校验：回扫 body 原文（body 首行 → 结束标签行首）。
+                if ((ctx == .heredoc or ctx == .nowdoc) and version.id >= 70300) {
+                    try checkHeredocIndent(gpa, source, ti, starts[i], heredoc_body_start, errors);
+                }
+                ctx = .none;
+            },
+            .backtick => {
+                if (ctx == .none) {
+                    ctx = .dq; // 反引号 shell exec 开启（可转义）
+                } else {
+                    // 串内结束反引号：lexer 以 .backtick 收尾 shell exec
+                    ctx = .none;
+                }
+            },
+            .string_part => {
+                // `\u{...}` 码点越界（PHP 7.0 起；nowdoc 不转义、5.6 下 \u 原样）。
+                if (ctx != .none and ctx != .nowdoc and version.id >= 70000) {
+                    try checkUnicodeEscape(gpa, s, ti, errors);
+                }
+            },
+            else => {},
+        }
+    }
+}
+
+/// 扫描字符串字面片段中的 `\u{...}` 转义，码点 > 0x10FFFF 报 `lex_error`
+/// （对齐 php-parser / PHP 7.0 的 Invalid UTF-8 codepoint escape sequence）。
+fn checkUnicodeEscape(
+    gpa: std.mem.Allocator,
+    part: []const u8,
+    token: TokenIndex,
+    errors: *std.ArrayList(Error),
+) !void {
+    var pos: usize = 0;
+    while (pos + 3 < part.len) : (pos += 1) {
+        if (!std.mem.eql(u8, part[pos .. pos + 2], "\\u") or part[pos + 2] != '{') continue;
+        const hex_start = pos + 3;
+        var hex_end = hex_start;
+        while (hex_end < part.len and part[hex_end] != '}') : (hex_end += 1) {}
+        if (hex_end >= part.len) break; // 无闭合（php 报另一类错，暂不判）
+        const digits = part[hex_start..hex_end];
+        if (digits.len == 0 or digits.len > 16) {
+            pos = hex_end;
+            continue; // 空 / 超长：php 报 invalid sequence，暂只处理可解析的越界
+        }
+        var cp: u64 = 0;
+        var valid = true;
+        for (digits) |ch| {
+            cp *|= 16;
+            cp +|= switch (ch) {
+                '0'...'9' => ch - '0',
+                'a'...'f' => ch - 'a' + 10,
+                'A'...'F' => ch - 'A' + 10,
+                else => {
+                    valid = false;
+                    break;
+                },
+            };
+        }
+        if (valid and cp > 0x10FFFF) {
+            try addLexErrorEx(gpa, errors, .invalid_utf8_codepoint, token, token, token, 0);
+            return;
+        }
+        pos = hex_end;
+    }
+}
+
+/// PHP 7.3 flexible heredoc / nowdoc 缩进校验（body 首行 → 结束标签行首）：
+/// - 行首缩进 tab 与空格混用 → 报错；
+/// - 行首缩进少于结束标签缩进 → 报错。
+/// 空行（除空白外无内容）不校验。每个 heredoc 至多报一条（mixed 优先于缩进不足，
+/// 对齐 php-parser 对整段产一条错误的语义）；错误定位取结束标签 token。
+fn checkHeredocIndent(
+    gpa: std.mem.Allocator,
+    source: []const u8,
+    tok: TokenIndex,
+    label_start: usize,
+    body_start: usize,
+    errors: *std.ArrayList(Error),
+) !void {
+    if (body_start >= source.len) return;
+    // 结束标签行缩进前缀作为基准（lexer 的 string_end token 起点在 label 文本处，
+    // 前导缩进并入前一个 string_part，故 label 行行首到 string_end.start 是前缀）。
+    var b0 = label_start;
+    while (b0 > 0 and source[b0 - 1] != '\n') : (b0 -= 1) {}
+    const prefix = source[b0..label_start]; // 全空白，base = prefix.len
+    const base = prefix.len;
+    var mixed = false;
+    var under = false;
+    var line = body_start;
+    while (line < label_start) {
+        var e = line;
+        while (e < source.len and source[e] != '\n') : (e += 1) {}
+        const row_end = @min(e, label_start);
+        const row = source[line..row_end];
+        // 行首缩进前缀
+        var plen: usize = 0;
+        var has_tab = false;
+        var has_sp = false;
+        while (plen < row.len and (row[plen] == ' ' or row[plen] == '\t')) : (plen += 1) {
+            if (row[plen] == '\t') has_tab = true else has_sp = true;
+        }
+        // 空行（无内容）不校验。有内容时按 PHP flexible 规则：行首空白必须「以
+        // label 前缀逐字符开头」；长度不足或前 base 字符类型不符都算违规（前缀
+        // 内 tab/space 混用归类 mixed，长度不足归类缩进不足）。
+        if (plen < row.len) {
+            if (plen < base) {
+                under = true;
+            } else if (!std.mem.eql(u8, row[0..base], prefix)) {
+                if (has_tab and has_sp) {
+                    mixed = true;
+                } else {
+                    under = true;
+                }
+            }
+        }
+        if (e >= source.len) break;
+        line = e + 1;
+    }
+    if (mixed) {
+        try addLexErrorEx(gpa, errors, .invalid_indentation_mixed, tok, tok, tok, 0);
+    } else if (under) {
+        try addLexErrorEx(gpa, errors, .invalid_indentation_level, tok, tok, tok, @intCast(base));
+    }
+}
+
+
 /// 在已有 token 切片上执行递归下降解析（私有，外部走 `parse`）。
 /// `tokens` 移入返回的 `Ast`；临时 `nodes`/`extra_data`/`errors` 由 `defer` 释放，
 /// 失败时 `errdefer` 兜底。
@@ -1018,12 +1580,19 @@ fn parseTokens(
         .extra_data = try std.ArrayList(u32).initCapacity(gpa, 0),
         .errors = try std.ArrayList(Error).initCapacity(gpa, 0),
         .node_versions = try std.ArrayList(PhpVersion).initCapacity(gpa, 0),
+        .version = version,
         .tok_i = 0,
     };
     defer p.nodes.deinit(gpa);
     defer p.extra_data.deinit(gpa);
     defer p.errors.deinit(gpa);
     defer p.node_versions.deinit(gpa);
+
+    // 词法后置诊断（解析前，一次扫描 token 流）：非法字符（lexer 记为 `.invalid`）、
+    // 未终止注释、非法数字字面量——lexer 词法分析本身不中断、仅产出 token，这些
+    // 需「扫描原文」才能判定的错误在此统一收集（`lex_error`）。不动 token 流，
+    // 错误随收集式模型继续。
+    try lexScanDiag(gpa, source, tokens, version, &p.errors);
 
     const root = try p.parseRoot();
 
@@ -1032,9 +1601,13 @@ fn parseTokens(
     while (i < p.node_versions.items.len) : (i += 1) {
         const nv = p.node_versions.items[i];
         if (nv.id != 0 and nv.id > version.id) {
+            const mt = p.nodes.items(.main_token)[i];
             try p.errors.append(gpa, .{
                 .tag = .unsupported_version,
-                .token = p.nodes.items(.main_token)[i],
+                .token = mt,
+                .token_end = mt,
+                .aux = mt,
+                .data = 0,
                 .required = nv,
             });
         }
@@ -1087,19 +1660,120 @@ test "ast :: nodeVersion :: 标记节点引入版本" {
         \\<?php
         \\enum E { case A; }
         \\$x = new Foo;
+        \\$y = new Bar->m();
     , testing.v84);
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
+    var new_count: usize = 0;
     for (tree.nodes.items(.tag), 0..) |tag, i| {
         const v = tree.node_versions[i];
         if (tag == .stmt_enum or tag == .stmt_case) {
             try std.testing.expectEqual(@as(u32, 80100), v.id); // enum/case 为 8.1
         }
         if (tag == .expr_new) {
-            try std.testing.expectEqual(@as(u32, 80400), v.id); // 无括号 new 为 8.4
+            // 无括号 new 本身是基础语法（`new Foo;` → 0）；8.4 只标记链式形态
+            // （`new Bar->m()` 无括号 new 后接链 token）。按源码出现次序区分。
+            if (new_count == 1) {
+                try std.testing.expectEqual(@as(u32, 80400), v.id);
+            } else {
+                try std.testing.expectEqual(@as(u32, 0), v.id);
+            }
+            new_count += 1;
         }
     }
+}
+
+/// 词法/解码诊断条数（`lexScanDiag` 产出的那些 tag）。
+fn countLexErrors(tree: Ast) usize {
+    var n: usize = 0;
+    for (tree.errors) |e| {
+        switch (e.tag) {
+            .lex_error, .unterminated_comment, .unexpected_character,
+            .unexpected_null_byte, .invalid_numeric_literal, .invalid_numeric_separator,
+            .invalid_indentation_mixed, .invalid_indentation_level,
+            .short_echo_identifier, .invalid_utf8_codepoint => n += 1,
+            else => {},
+        }
+    }
+    return n;
+}
+
+test "lex :: 非法字符 :: 只报一条词法诊断，不附带 expected_expr" {
+    const gpa = std.testing.allocator;
+    // php-parser 由宿主词法报错后不再额外产出语法错误：非法字符处应恰好一条
+    // 诊断（消息含字符原文与 ASCII 码）。
+    var t = try Ast.parse(gpa, "<?php \x01 ;", .{ .id = 80500 });
+    defer t.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), countLexErrors(t));
+    var n_expr: usize = 0;
+    for (t.errors) |e| {
+        if (e.tag == .expected_expr) n_expr += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 0), n_expr);
+}
+
+test "lex :: 前导零整数 8/9 :: 7.0 起报、5.6 合法、八进制合法" {
+    const gpa = std.testing.allocator;
+    var t7 = try Ast.parse(gpa, "<?php 0787;", .{ .id = 70000 });
+    defer t7.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), countLexErrors(t7));
+
+    var t85 = try Ast.parse(gpa, "<?php 089;", .{ .id = 80500 });
+    defer t85.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), countLexErrors(t85));
+
+    var t56 = try Ast.parse(gpa, "<?php 0787;", .{ .id = 50600 });
+    defer t56.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(t56));
+
+    var ok = try Ast.parse(gpa, "<?php 0777; 0; 0x78; 0o12;", .{ .id = 80500 });
+    defer ok.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(ok));
+}
+
+test "lex :: 转义串 \\u{} 码点越界 :: 7.0 起报、nowdoc 与 5.6 不转义" {
+    const gpa = std.testing.allocator;
+    var t = try Ast.parse(gpa, "<?php \"\\u{FFFFFFFFFFFFFFFF}\";", .{ .id = 80500 });
+    defer t.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), countLexErrors(t));
+
+    var ok = try Ast.parse(gpa, "<?php \"\\u{1F602}\"; \"\\u{0}\";", .{ .id = 80500 });
+    defer ok.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(ok));
+
+    // nowdoc 不转义：内容原样保留，码点文本不校验
+    var nd = try Ast.parse(gpa, "<?php <<<'A'\n\\u{FFFFFFFFFFFFFFFF}\nA;\n", .{ .id = 80500 });
+    defer nd.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(nd));
+
+    // 5.6 无 \u{} 转义语义，不报
+    var t56 = try Ast.parse(gpa, "<?php \"\\u{FFFFFFFFFFFFFFFF}\";", .{ .id = 50600 });
+    defer t56.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(t56));
+}
+
+test "lex :: flexible heredoc 缩进 :: 混用/不足报错、合法缩进与空行放行" {
+    const gpa = std.testing.allocator;
+    // tab 与空格混用（结束标签 2 tab；body 行前缀前 2 字符 tab+空格 ≠ tab+tab）
+    var mixed = try Ast.parse(gpa, "<?php echo <<<END\n\t   X\n\t\tEND;\n", .{ .id = 80500 });
+    defer mixed.deinit(gpa);
+    try std.testing.expect(countLexErrors(mixed) >= 1);
+
+    // body 缩进少于结束标签（结束标签 5 空格，末行内容仅 4 空格）
+    var under = try Ast.parse(gpa, "<?php echo <<<END\n      a\n     b\n    c\n     END;\n", .{ .id = 80500 });
+    defer under.deinit(gpa);
+    try std.testing.expect(countLexErrors(under) >= 1);
+
+    // 合法：缩进一致、空行自由
+    var ok = try Ast.parse(gpa, "<?php echo <<<END\n  a\n\n  b\n  END;\n", .{ .id = 80500 });
+    defer ok.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(ok));
+
+    // 5.6 老式 heredoc：无 flexible 缩进语义，缩进不足不报（结束标签必须顶格，此处顶格）
+    var old = try Ast.parse(gpa, "<?php echo <<<END\nFoo\nEND;\n", .{ .id = 50600 });
+    defer old.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), countLexErrors(old));
 }
 
 test "ast :: 版本门控 :: 目标低于引入版本时上报" {
@@ -1147,7 +1821,6 @@ test "ast :: 8.5 语法 :: 表驱动验证版本门控" {
     const cases = [_]Case{
         .{ .src = "<?php $x |> strlen;", .n = 1 },
         .{ .src = "<?php (void) foo();", .n = 1 },
-        .{ .src = "<?php clone($o, withProperties: ['a' => 1]);", .n = 1 },
         .{ .src = "<?php class C { #[A] const X = 1; }", .n = 1 },
         .{ .src = "<?php #[A] const X = 1;", .n = 1 },
         .{ .src = "<?php class C { public protected(set) static int $x; }", .n = 1 },

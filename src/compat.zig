@@ -34,6 +34,7 @@ pub fn phpParserType(tag: Node.Tag) []const u8 {
         .stmt_trait => "Stmt_Trait",
         .stmt_case => "Stmt_Case",
         .stmt_property => "Stmt_Property",
+        .property_item => "Stmt_PropertyItem",
         .property_hook => "Stmt_PropertyHook",
         .stmt_namespace => "Stmt_Namespace",
         .stmt_return => "Stmt_Return",
@@ -96,6 +97,10 @@ pub fn phpParserType(tag: Node.Tag) []const u8 {
         .expr_match => "Expr_Match",
         .expr_match_arm => "Expr_MatchArm",
         .expr_first_class_callable => "Expr_FirstClassCallable",
+        // php-parser 5.8 中占位是独立节点 VariadicPlaceholder（getType 即 "VariadicPlaceholder"）
+        .expr_variadic_placeholder => "VariadicPlaceholder",
+        // 解构空槽：php-parser ArrayItem.value=null（无独立节点）；自定义名供调试
+        .expr_array_hole => "ArrayHole",
         .expr_closure => "Expr_Closure",
         .expr_arrow_function => "Expr_ArrowFunction",
         .expr_clone => "Expr_Clone",
