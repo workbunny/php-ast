@@ -1,0 +1,48 @@
+(root `<?php`
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`)
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`)
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Test '" $a \n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Test '" \$a \n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Test `)
+      (expr_variable `$a`)
+      (expr_string_part `\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Test `)
+      (expr_variable `$a`)
+      (expr_string_part ` and `)
+      (expr_property_fetch `$b`
+        (expr_variable `$b`)
+        (name `c`)
+      )
+      (expr_string_part ` test\n`)
+    )
+  )
+  (stmt_expression `b<<<`
+    (expr_encapsed `b<<<`
+      (expr_string_part `Binary\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_variable `$x`)
+      (expr_string_part `\r\n`)
+    )
+  )
+)

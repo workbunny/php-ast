@@ -1,0 +1,96 @@
+; 9 条诊断
+;   Syntax error, unexpected T_STRING from 13:4 to 13:4
+;   Syntax error, unexpected T_STRING from 14:2 to 14:4
+;   Syntax error, unexpected T_STRING from 15:2 to 15:2
+;   Syntax error, unexpected '.0' from 15:3 to 15:4
+;   Syntax error, unexpected T_STRING from 16:3 to 16:4
+;   Syntax error, unexpected T_STRING from 17:2 to 17:6
+;   Syntax error, unexpected T_STRING from 18:2 to 18:6
+;   Syntax error, unexpected T_STRING from 19:2 to 19:4
+;   Syntax error, unexpected T_STRING from 20:2 to 20:4
+(root `<?php`
+  (stmt_expression `6.674_083e-11`
+    (expr_float `6.674_083e-11`)
+  )
+  (stmt_expression `299_792_458`
+    (expr_int `299_792_458`)
+  )
+  (stmt_expression `0x7AFE_F00D`
+    (expr_int `0x7AFE_F00D`)
+  )
+  (stmt_expression `0b0101_1111`
+    (expr_int `0b0101_1111`)
+  )
+  (stmt_expression `0137_041`
+    (expr_int `0137_041`)
+  )
+  (stmt_expression `_100`
+    (expr_const_fetch `_100`
+      (name `_100`)
+    )
+  )
+  (stmt_expression `100`
+    (expr_int `100`)
+  )
+  (stmt_expression `_`
+    (expr_const_fetch `_`
+      (name `_`)
+    )
+  )
+  (stmt_expression `1`
+    (expr_int `1`)
+  )
+  (stmt_expression `__1`
+    (expr_const_fetch `__1`
+      (name `__1`)
+    )
+  )
+  (stmt_expression `1`
+    (expr_int `1`)
+  )
+  (stmt_expression `_`
+    (expr_const_fetch `_`
+      (name `_`)
+    )
+  )
+  (stmt_expression `1.`
+    (expr_float `1.`)
+  )
+  (stmt_expression `_0`
+    (expr_const_fetch `_0`
+      (name `_0`)
+    )
+  )
+  (stmt_expression `0`
+    (expr_int `0`)
+  )
+  (stmt_expression `x_123`
+    (expr_const_fetch `x_123`
+      (name `x_123`)
+    )
+  )
+  (stmt_expression `0`
+    (expr_int `0`)
+  )
+  (stmt_expression `b_101`
+    (expr_const_fetch `b_101`
+      (name `b_101`)
+    )
+  )
+  (stmt_expression `1`
+    (expr_int `1`)
+  )
+  (stmt_expression `_e2`
+    (expr_const_fetch `_e2`
+      (name `_e2`)
+    )
+  )
+  (stmt_expression `1`
+    (expr_int `1`)
+  )
+  (stmt_expression `e_2`
+    (expr_const_fetch `e_2`
+      (name `e_2`)
+    )
+  )
+)

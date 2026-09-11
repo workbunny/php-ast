@@ -1,0 +1,8 @@
+(root `#!/usr/bin/env php`
+  (stmt_echo `echo`
+    (expr_encapsed `"`
+      (expr_string_part `foobar`)
+    )
+  )
+  (inline_html `\n#!/usr/bin/env php\n`)
+)

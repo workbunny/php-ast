@@ -161,6 +161,14 @@ fn handleDanglingDollarMember(p: *Parser) ?Index {
     return null;
 }
 
+/// `->` / `?->` 后成员名解析失败的恢复：就地报 `unexpected <X>, expecting
+/// T_STRING or T_VARIABLE or '{' or '$'`（php-parser 成员名位的期望集合，
+/// recovery[8] 的 `$foo->;` 与 recovery[9] 的 `$bar->}`）。
+fn handleDanglingArrowMember(p: *Parser) ?Index {
+    p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .member_name);
+    return null;
+}
+
 /// `->` / `?->` / `::` 后的成员名：标识符/关键字名字（`->b`）、变量式
 /// （`->$b`），或花括号动态名 `{expr}`（`->{'b'}`、`::{$name}`，php.y
 /// `member_name → identifier | '{' expr '}'`）。花括号名返回括号内表达式节点。
@@ -180,6 +188,11 @@ fn parseMemberName(p: *Parser) ast.ParseError!?Index {
             return (try parseVariableName(p)) orelse return null;
         },
         else => {
+            // 先判「能否作名字段」，不可则**不消费** token 直接失败——`parseName`
+            // 会无条件吃掉首 token，若让其消费 `;`/`}`/`)` 等边界符，调用方（成员名
+            // 恢复）的诊断位置就会落到下一个 token 上（recovery[8] 的 `$foo->;` /
+            // recovery[18] 的 `Bar::)` 由此错位到 `;`）。
+            if (!isNamePart(p.tokTag())) return null;
             return (try parseName(p)) orelse return null;
         },
     }
@@ -377,7 +390,7 @@ fn parseNewVariableSuffix(p: *Parser, base: Index) ast.ParseError!?Index {
             },
             .arrow => {
                 _ = p.nextToken();
-                const name = (try parseMemberName(p)) orelse return null;
+                const name = (try parseMemberName(p)) orelse return handleDanglingArrowMember(p);
                 e = (try p.addNode(.{
                     .tag = .expr_property_fetch,
                     .main_token = p.nodeMainToken(e),
@@ -387,7 +400,7 @@ fn parseNewVariableSuffix(p: *Parser, base: Index) ast.ParseError!?Index {
             .nullsafe_arrow => {
                 // `new $a?->b`：空安全属性取类名（8.0）。只到属性，不消费 `()`。
                 _ = p.nextToken();
-                const name = (try parseMemberName(p)) orelse return null;
+                const name = (try parseMemberName(p)) orelse return handleDanglingArrowMember(p);
                 e = (try p.addNode(.{
                     .tag = .expr_nullsafe_property_fetch,
                     .main_token = p.nodeMainToken(e),
@@ -640,7 +653,7 @@ fn parsePostfixContinue(p: *Parser, base: Index) ast.ParseError!?Index {
             },
             .arrow => {
                 _ = p.nextToken();
-                const name = (try parseMemberName(p)) orelse return null;
+                const name = (try parseMemberName(p)) orelse return handleDanglingArrowMember(p);
                 e = (try p.addNode(.{
                     .tag = .expr_property_fetch,
                     .main_token = p.nodeMainToken(e),
@@ -649,7 +662,7 @@ fn parsePostfixContinue(p: *Parser, base: Index) ast.ParseError!?Index {
             },
             .nullsafe_arrow => {
                 _ = p.nextToken();
-                const name = (try parseMemberName(p)) orelse return null;
+                const name = (try parseMemberName(p)) orelse return handleDanglingArrowMember(p);
                 if (p.tokTag() == .lparen) {
                     const args = try parseArgs(p);
                     e = (try p.addNode(.{
@@ -1222,6 +1235,18 @@ fn parseArrayElements(p: *Parser, term: Token.Tag) ast.ParseError!ListRange {
             _ = p.nextToken();
             continue;
         }
+        // 项后只能接 `,`（下一项）或列表结束符 `]` / `)`；否则报列表期望集合
+        // （php-parser：`unexpected T_VARIABLE, expecting ',' or ']' or ')'`，
+        // recovery[22] 的索引位与 recovery[24] 的数组字面量），并推进到结束符
+        // **之前**停止——把夹杂的 token 交给列表收尾消化，既不连锁多报，也不
+        // 泄漏到外层被当新语句（结束符留给调用方正常消费）。
+        if (p.tokTag() != term) {
+            // 项后只能接 `,`（下一项）或列表结束符；否则报列表期望集合
+            // （php-parser：`unexpected X, expecting ',' or ']' or ')'`），并按括号
+            // 配对消化残余 token 与结束符（`skipBalancedTo` 的通用恢复）。
+            p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .comma_list);
+            _ = p.skipBalancedTo(term, true);
+        }
         break;
     }
     const lr = try p.addNodeList(items.items);
@@ -1307,7 +1332,13 @@ pub fn parseArgs(p: *Parser) ast.ParseError!ListRange {
             _ = p.nextToken();
             by_ref = true;
         }
-        var val = (try parseExpr(p)) orelse return args;
+        var val = (try parseExpr(p)) orelse {
+            // 实参解析失败（如 `Bar::` 残缺）：诊断已由表达式层就地报出，此处按括号
+            // 配对消化到参数表结束的 `)` 并消费，避免残余 token 泄漏到外层被当新语句。
+            _ = p.skipBalancedTo(.rparen, true);
+            args = try p.addNodeList(list.items);
+            return args;
+        };
         var key: OptionalTokenIndex = .none;
         if (!unpack and p.tokTag() == .colon) {
             // 命名参数名：标识符或关键字均可（`bar(class: 0)`，php.y name 含 semi_reserved）。

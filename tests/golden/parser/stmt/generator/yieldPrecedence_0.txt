@@ -1,0 +1,182 @@
+(root `<?php`
+  (stmt_function `function` name=`gen`
+    (stmt_block `{`
+      (stmt_expression `.`
+        (expr_binary `.`
+          (expr_yield `yield`
+            (expr_encapsed `"`
+              (expr_string_part `a`)
+            )
+          )
+          (expr_encapsed `"`
+            (expr_string_part `b`)
+          )
+        )
+      )
+      (stmt_expression `or`
+        (expr_binary `or`
+          (expr_yield `yield`
+            (expr_encapsed `"`
+              (expr_string_part `a`)
+            )
+          )
+          (expr_exit `die`)
+        )
+      )
+      (stmt_expression `.`
+        (expr_binary `.`
+          (expr_yield `yield`
+            (expr_encapsed `"`
+              (expr_string_part `k`)
+            )
+            (expr_encapsed `"`
+              (expr_string_part `a`)
+            )
+          )
+          (expr_encapsed `"`
+            (expr_string_part `b`)
+          )
+        )
+      )
+      (stmt_expression `or`
+        (expr_binary `or`
+          (expr_yield `yield`
+            (expr_encapsed `"`
+              (expr_string_part `k`)
+            )
+            (expr_encapsed `"`
+              (expr_string_part `a`)
+            )
+          )
+          (expr_exit `die`)
+        )
+      )
+      (stmt_expression `var_dump`
+        (expr_func_call `var_dump`
+          (name `var_dump`)
+          (expr_argument `[`
+            (expr_array `[`
+              (expr_array_item `.`
+                (expr_binary `.`
+                  (expr_yield `yield`
+                    (expr_encapsed `"`
+                      (expr_string_part `k`)
+                    )
+                    (expr_encapsed `"`
+                      (expr_string_part `a`)
+                    )
+                  )
+                  (expr_encapsed `"`
+                    (expr_string_part `b`)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      (stmt_expression `.`
+        (expr_binary `.`
+          (expr_yield `yield`
+            (expr_yield `yield`
+              (expr_encapsed `"`
+                (expr_string_part `k1`)
+              )
+              (expr_yield `yield`
+                (expr_encapsed `"`
+                  (expr_string_part `k2`)
+                )
+                (expr_encapsed `"`
+                  (expr_string_part `a`)
+                )
+              )
+            )
+          )
+          (expr_encapsed `"`
+            (expr_string_part `b`)
+          )
+        )
+      )
+      (stmt_expression `.`
+        (expr_binary `.`
+          (expr_yield `yield`
+            (expr_yield `yield`
+              (expr_encapsed `"`
+                (expr_string_part `k1`)
+              )
+              (expr_yield `yield`
+                (expr_encapsed `"`
+                  (expr_string_part `k2`)
+                )
+              )
+            )
+            (expr_encapsed `"`
+              (expr_string_part `a`)
+            )
+          )
+          (expr_encapsed `"`
+            (expr_string_part `b`)
+          )
+        )
+      )
+      (stmt_expression `var_dump`
+        (expr_func_call `var_dump`
+          (name `var_dump`)
+          (expr_argument `[`
+            (expr_array `[`
+              (expr_array_item `.`
+                (expr_binary `.`
+                  (expr_yield `yield`
+                    (expr_encapsed `"`
+                      (expr_string_part `k1`)
+                    )
+                    (expr_yield `yield`
+                      (expr_encapsed `"`
+                        (expr_string_part `k2`)
+                      )
+                      (expr_encapsed `"`
+                        (expr_string_part `a`)
+                      )
+                    )
+                  )
+                  (expr_encapsed `"`
+                    (expr_string_part `b`)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      (stmt_expression `var_dump`
+        (expr_func_call `var_dump`
+          (name `var_dump`)
+          (expr_argument `[`
+            (expr_array `[`
+              (expr_array_item `.`
+                (expr_binary `.`
+                  (expr_encapsed `"`
+                    (expr_string_part `a`)
+                  )
+                  (expr_encapsed `"`
+                    (expr_string_part `b`)
+                  )
+                )
+                (expr_yield `yield`
+                  (expr_encapsed `"`
+                    (expr_string_part `k1`)
+                  )
+                  (expr_yield `yield`
+                    (expr_encapsed `"`
+                      (expr_string_part `k2`)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)

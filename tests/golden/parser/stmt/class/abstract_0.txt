@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_method `function` name=`a`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`b`)
+  )
+)

@@ -1,0 +1,16 @@
+; 1 条诊断
+;   Syntax error, unexpected T_USE, expecting ';' from 4:1 to 4:3
+(root `<?php`
+  (stmt_group_use `use`
+    (name `Foo`)
+    (use_use `Bar`
+      (name `Bar`)
+    )
+  )
+  (stmt_group_use `use`
+    (name `Bar`)
+    (use_use `Foo`
+      (name `Foo`)
+    )
+  )
+)

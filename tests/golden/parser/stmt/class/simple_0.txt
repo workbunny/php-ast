@@ -1,0 +1,48 @@
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (name `B`)
+    (name `C`)
+    (name `D`)
+    (stmt_class_const `const` name=`A`
+      (const_decl `A`
+        (expr_string `'B'`)
+      )
+      (const_decl `C`
+        (expr_string `'D'`)
+      )
+    )
+    (stmt_property `$a`
+      (property_item `$a`
+        (expr_string `'b'`)
+      )
+      (property_item `$c`
+        (expr_string `'d'`)
+      )
+    )
+    (stmt_property `$e`
+      (property_item `$e`)
+    )
+    (stmt_property `$f`
+      (property_item `$f`)
+    )
+    (stmt_method `function` name=`a`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`b`
+      (param `$a`)
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`c`
+      (type_name `B`
+        (name `B`)
+      )
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`d`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`e`
+      (stmt_block `{`)
+    )
+  )
+)

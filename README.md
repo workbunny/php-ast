@@ -133,7 +133,7 @@ Zig 对 `@import` 惰性分析，测试收集靠 `src/root.zig` 末尾的登记 
 | `src/testing.zig`  | 共享断言工具：`expectNoErrors`/`expectTagCounts`/`countTag`/`firstNode`/`expectSourceSlice` 与版本常量 `v80`–`v85` |
 | `src/coverage.zig` | 覆盖矩阵：为每个 `Node.Tag` / `Token.Tag` 固定一条最小用例，由 `comptime` 强制完整性                               |
 | `src/dump.zig`     | 把 AST 渲染为缩进文本，供调试与黄金快照使用                                                                        |
-| `tests/golden/`    | 黄金快照：`*.php` 与其期望的树形 `*.txt` 逐字节比对                                                                |
+| `tests/golden/`    | 黄金快照：`*.php` 与其期望的树形 `*.txt` 逐字节比对（含 fixture 迁移段与手写样例）                                  |
 | 命名规范           | `test "<模块> :: <场景> :: <预期>"`，如 `test "expr :: 赋值 :: 普通/复合/引用三种形式"`                            |
 
 **覆盖闸门（`src/coverage.zig`）**：矩阵按声明顺序逐条列出最小用例，`comptime` 校验
@@ -144,8 +144,15 @@ Zig 对 `@import` 惰性分析，测试收集靠 `src/root.zig` 末尾的登记 
 `token.zig` 一处，测试自动覆盖，无需同步维护两份表。
 
 **黄金快照**：`tests/golden/**/*.php` 的解析结果与同名 `.txt` 比对，一条断言锁住整棵树
-的结构。新增语法时补一个 fixture 即可，不必手写大量断言。快照同时记录诊断，因此
-「引入新错误」也会被比出来。解析行为有意变更后更新快照：
+的结构与诊断——「引入新错误」同样会被比出来。快照分两类：
+
+- `tests/golden/parser/**`：PHP-Parser 测试用例的代码段（278 段，来源与许可见
+  [`NOTICE.md`](NOTICE.md) 与 [`LICENSES/php-parser.txt`](LICENSES/php-parser.txt)，BSD 3-Clause）。
+  `zig build golden-gen -- --php-parser <路径>` 按当前用例重新导出，新增/调整段落后
+  需再跑一次 `-Dupdate-golden` 补快照。
+- `tests/golden/{decl,expr,stmt}`：手写样例，覆盖迁移用例未触及的组合。
+
+解析行为有意变更后更新快照：
 
 ```bash
 zig build test -Dupdate-golden   # 重新生成快照
@@ -182,12 +189,12 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 | `src/dump.zig`        | AST 文本渲染，用于调试与黄金快照                                                                             |
 | `src/golden.zig`      | 黄金快照比对（`tests/golden/**`），`-Dupdate-golden` 可重新生成                                              |
 
-仓库其余目录：`tools/` 是与主体库源码分离、不随库编译的辅助工具——含 `parity_check.zig`
-（一致性对照工具：以 php-parser 测试子集为基准度量本库的接受面与诊断质量，运行
-`zig build check-parity`，报告写在仓库根；可传参指定对照基准目录并把报告写进该目录，
-用法见 `tools/parity_check.zig` 头部注释）；`tests/third_party/php-parser/` 为 php-parser 测试子集
-（BSD 3-Clause，含 LICENSE，对照数据源）；`reference/` 为本地参考（php-parser 完整源码
-等，`.gitignore` 忽略，不入库）。
+仓库其余目录：`tools/` 是与主体库源码分离、不随库编译的辅助工具——含 `conformance.zig`
+（符合性对照：以 PHP-Parser 测试用例为 oracle 度量本库的接受面与诊断质量，并做防回归
+门禁，运行 `zig build conformance -- --php-parser <路径>`，报告默认落
+`zig-out/conformance/`）；`golden_gen.zig`（快照迁移，见上）；两者共用的 `.test` 解析在
+`fixtures.zig`，门禁数据在 `known_diffs.txt`。`reference/` 为本地参考（PHP-Parser 完整
+源码等，`.gitignore` 忽略，不入库）——PHP-Parser 是**开发期参照**，不是构建依赖。
 
 ## 说明
 

@@ -1,0 +1,5 @@
+(root `#!/usr/bin/env php`
+  (stmt_namespace `namespace`
+    (name `A`)
+  )
+)

@@ -1,0 +1,10 @@
+(root `<?php`
+  (stmt_function `function` name=`foo`
+    (param `$foo`
+      (type_name `void`
+        (name `void`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

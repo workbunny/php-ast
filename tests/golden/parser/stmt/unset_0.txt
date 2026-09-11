@@ -1,0 +1,9 @@
+(root `<?php`
+  (stmt_unset `unset`
+    (expr_variable `$a`)
+  )
+  (stmt_unset `unset`
+    (expr_variable `$b`)
+    (expr_variable `$c`)
+  )
+)

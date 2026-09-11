@@ -1,0 +1,173 @@
+(root `<?php`
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_property_fetch `$A`
+        (expr_variable `$A`)
+        (name `B`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_const_fetch `B`
+          (name `B`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `1234`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `9223372036854775808`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `000`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `0x0`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_int `0b0`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_variable `$B`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_string `'B'`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `${A}`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `${A['B']}`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `$`)
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\{`)
+      (expr_variable `$A`)
+      (expr_string_part `}`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\{ `)
+      (expr_variable `$A`)
+      (expr_string_part ` }`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\\`)
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\\{ `)
+      (expr_variable `$A`)
+      (expr_string_part ` }`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_variable_ref `$`
+        (expr_variable `$A`)
+      )
+      (expr_string_part `[B]`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `$`)
+      (expr_array_dim_fetch `$A`
+        (expr_variable `$A`)
+        (expr_const_fetch `B`
+          (name `B`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `A `)
+      (expr_variable `$B`)
+      (expr_string_part ` C`)
+    )
+  )
+  (stmt_expression `b`
+    (expr_encapsed `b`
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression `B`
+    (expr_encapsed `B`
+      (expr_variable `$A`)
+    )
+  )
+)

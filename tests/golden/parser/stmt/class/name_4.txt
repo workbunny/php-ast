@@ -1,0 +1,5 @@
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (name `PARENT`)
+  )
+)

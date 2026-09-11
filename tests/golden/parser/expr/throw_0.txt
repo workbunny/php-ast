@@ -1,0 +1,22 @@
+(root `<?php`
+  (stmt_expression `test`
+    (expr_func_call `test`
+      (name `test`)
+      (expr_argument `throw`
+        (expr_throw `throw`
+          (expr_variable `$x`)
+        )
+      )
+    )
+  )
+  (stmt_expression `??`
+    (expr_binary `??`
+      (expr_variable `$a`)
+      (expr_throw `throw`
+        (expr_new `new`
+          (name `Exception`)
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,62 @@
+(root `<?php`
+  (stmt_expression `a`
+    (expr_func_call `a`
+      (name `a`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_func_call `$a`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `$`
+    (expr_func_call `$`
+      (expr_variable_ref `$`
+        (expr_string `'a'`)
+      )
+    )
+  )
+  (stmt_expression `$`
+    (expr_func_call `$`
+      (expr_variable_ref `$`
+        (expr_variable `$a`)
+      )
+    )
+  )
+  (stmt_expression `$`
+    (expr_func_call `$`
+      (expr_variable_ref `$`
+        (expr_variable_ref `$`
+          (expr_variable `$a`)
+        )
+      )
+    )
+  )
+  (stmt_expression `$a`
+    (expr_func_call `$a`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_string `'b'`)
+      )
+    )
+  )
+  (stmt_expression `$a`
+    (expr_func_call `$a`
+      (expr_array_dim_fetch `$a`
+        (expr_property_fetch `$a`
+          (expr_variable `$a`)
+          (name `b`)
+        )
+        (expr_string `'c'`)
+      )
+    )
+  )
+  (stmt_expression `a`
+    (expr_array_dim_fetch `a`
+      (expr_func_call `a`
+        (name `a`)
+      )
+      (expr_string `'b'`)
+    )
+  )
+)

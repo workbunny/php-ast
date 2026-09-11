@@ -1,0 +1,55 @@
+(root `<?php`
+  (stmt_function `function` name=`a`
+    (param `$b`
+      (expr_const_fetch `null`
+        (name `null`)
+      )
+    )
+    (param `$c`
+      (expr_string `'foo'`)
+    )
+    (param `$d`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+    )
+    (param `$f`
+      (expr_unary `+`
+        (expr_int `1`)
+      )
+    )
+    (param `$g`
+      (expr_unary `-`
+        (expr_float `1.0`)
+      )
+    )
+    (param `$h`
+      (expr_array `array`)
+    )
+    (param `$i`
+      (expr_array `[`)
+    )
+    (param `$j`
+      (expr_array `[`
+        (expr_array_item `'foo'`
+          (expr_string `'foo'`)
+        )
+      )
+    )
+    (param `$k`
+      (expr_array `[`
+        (expr_array_item `'foo'`
+          (expr_string `'foo'`)
+        )
+        (expr_array_item `'baz'`
+          (expr_string `'baz'`)
+          (expr_string `'bar'`)
+        )
+      )
+    )
+    (stmt_block `{`)
+  )
+)

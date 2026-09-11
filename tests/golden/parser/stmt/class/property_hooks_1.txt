@@ -1,0 +1,11 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+    )
+    (stmt_method `function` name=`__construct`
+      (param `$prop2`)
+      (stmt_block `{`)
+    )
+  )
+)

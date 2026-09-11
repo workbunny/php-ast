@@ -1,0 +1,16 @@
+; 1 条诊断
+;   Syntax error, unexpected T_VARIABLE, expecting '(' from 6:1 to 6:2
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$k`)
+      (expr_int `2`)
+    )
+  )
+)

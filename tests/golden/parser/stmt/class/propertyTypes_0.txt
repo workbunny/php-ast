@@ -1,0 +1,32 @@
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_property `$a`
+      (type_name `string`
+        (name `string`)
+      )
+      (property_item `$a`)
+    )
+    (stmt_property `$b`
+      (type_name `D`
+        (name `D`)
+      )
+      (property_item `$b`)
+    )
+    (stmt_property `$c`
+      (type_nullable `?`
+        (type_name `float`
+          (name `float`)
+        )
+      )
+      (property_item `$c`)
+    )
+    (stmt_property `$d`
+      (type_nullable `?`
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (property_item `$d`)
+    )
+  )
+)

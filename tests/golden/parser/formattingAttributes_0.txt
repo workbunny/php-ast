@@ -1,0 +1,148 @@
+(root `<?php`
+  (stmt_expression `0b1100`
+    (expr_int `0b1100`)
+  )
+  (stmt_expression `0o14`
+    (expr_int `0o14`)
+  )
+  (stmt_expression `12`
+    (expr_int `12`)
+  )
+  (stmt_expression `0xc`
+    (expr_int `0xc`)
+  )
+  (stmt_expression `1_2_3_4_5_6`
+    (expr_int `1_2_3_4_5_6`)
+  )
+  (stmt_expression `3.141_592_653`
+    (expr_float `3.141_592_653`)
+  )
+  (stmt_expression `'foo'`
+    (expr_string `'foo'`)
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `bar`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `foo\nbar`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `foo\nbar`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `foo\nbar`)
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `foo\nbar`)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `foo\nbar`)
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`)
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `foo bar\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `    foo bar\n    `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `foo\nbar\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `    foo\nbar\n    `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `foo\nbar`)
+      (expr_variable `$x`)
+      (expr_string_part `baz\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `    foo\nbar`)
+      (expr_variable `$x`)
+      (expr_string_part `baz\n    `)
+    )
+  )
+  (stmt_expression `array`
+    (expr_array `array`)
+  )
+  (stmt_expression `[`
+    (expr_array `[`)
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$x`
+          (expr_variable `$x`)
+        )
+      )
+      (expr_variable `$y`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_item `$x`
+          (expr_variable `$x`)
+        )
+      )
+      (expr_variable `$y`)
+    )
+  )
+  (stmt_expression `int`
+    (expr_cast `int`
+      (expr_variable `$int`)
+    )
+  )
+  (stmt_expression `integer`
+    (expr_cast `integer`
+      (expr_variable `$integer`)
+    )
+  )
+  (stmt_expression `bool`
+    (expr_cast `bool`
+      (expr_variable `$bool`)
+    )
+  )
+  (stmt_expression `boolean`
+    (expr_cast `boolean`
+      (expr_variable `$boolean`)
+    )
+  )
+  (stmt_expression `string`
+    (expr_cast `string`
+      (expr_variable `$string`)
+    )
+  )
+  (stmt_expression `binary`
+    (expr_cast `binary`
+      (expr_variable `$binary`)
+    )
+  )
+)

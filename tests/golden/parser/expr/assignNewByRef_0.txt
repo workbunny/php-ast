@@ -1,0 +1,10 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign_ref `=`
+      (expr_variable `$a`)
+      (expr_new `new`
+        (name `B`)
+      )
+    )
+  )
+)

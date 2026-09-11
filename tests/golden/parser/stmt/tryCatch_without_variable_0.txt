@@ -1,0 +1,9 @@
+(root `<?php`
+  (stmt_try `try`
+    (stmt_block `{`)
+    (stmt_catch `catch`
+      (name `Exception`)
+      (stmt_block `{`)
+    )
+  )
+)

@@ -1,0 +1,29 @@
+(root `<?php`
+  (stmt_expression `0`
+    (expr_int `0`)
+  )
+  (stmt_expression `1`
+    (expr_int `1`)
+  )
+  (stmt_expression `0`
+    (expr_int `0`)
+  )
+  (stmt_expression `0`
+    (expr_int `0`)
+  )
+  (stmt_expression `0xFFF`
+    (expr_int `0xFFF`)
+  )
+  (stmt_expression `0xfff`
+    (expr_int `0xfff`)
+  )
+  (stmt_expression `0XfFf`
+    (expr_int `0XfFf`)
+  )
+  (stmt_expression `0777`
+    (expr_int `0777`)
+  )
+  (stmt_expression `0b111000111000`
+    (expr_int `0b111000111000`)
+  )
+)

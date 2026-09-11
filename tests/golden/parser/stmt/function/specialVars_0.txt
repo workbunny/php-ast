@@ -1,0 +1,21 @@
+(root `<?php`
+  (stmt_function `function` name=`a`
+    (stmt_block `{`
+      (stmt_global `global`
+        (expr_variable `$a`)
+        (expr_variable_ref `$`
+          (expr_string `'b'`)
+        )
+        (expr_variable_ref `$`
+          (expr_variable `$c`)
+        )
+      )
+      (stmt_static `static`
+        (static_var `$c`)
+        (static_var `$d`
+          (expr_string `'e'`)
+        )
+      )
+    )
+  )
+)

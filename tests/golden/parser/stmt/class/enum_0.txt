@@ -1,0 +1,18 @@
+(root `<?php`
+  (stmt_enum `enum` name=`A`
+    (stmt_case `case` name=`class`)
+  )
+  (stmt_enum `enum` name=`B`
+    (name `Bar`)
+    (name `Baz`)
+  )
+  (stmt_enum `enum` name=`C`
+    (type_name `int`
+      (name `int`)
+    )
+    (name `Bar`)
+    (stmt_case `case` name=`Foo`
+      (expr_int `1`)
+    )
+  )
+)

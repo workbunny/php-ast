@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_group_use `use`
+    (name `Foo\Bar`)
+    (use_use `Baz`
+      (name `Baz`)
+    )
+  )
+)

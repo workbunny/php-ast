@@ -1,0 +1,9 @@
+(root `<?php`
+  (stmt_class `class` name=`Foo`
+    (stmt_method `function` name=`__construct`
+      (param `$name`)
+      (param `$value`)
+      (stmt_block `{`)
+    )
+  )
+)

@@ -1,0 +1,224 @@
+(root `<?php`
+  (stmt_expression `id`
+    (expr_func_call `id`
+      (expr_func_call `id`
+        (name `id`)
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `1`
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_expression `id`
+    (expr_func_call `id`
+      (expr_func_call `id`
+        (expr_func_call `id`
+          (name `id`)
+          (expr_argument `'id'`
+            (expr_string `'id'`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `2`
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_expression `id`
+    (expr_func_call `id`
+      (expr_func_call `id`
+        (expr_func_call `id`
+          (expr_func_call `id`
+            (name `id`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `4`
+        (expr_int `4`)
+      )
+    )
+  )
+  (stmt_expression `id`
+    (expr_func_call `id`
+      (expr_func_call `id`
+        (expr_func_call `id`
+          (expr_array_dim_fetch `id`
+            (expr_func_call `id`
+              (name `id`)
+              (expr_argument `[`
+                (expr_array `[`
+                  (expr_array_item `'udef'`
+                    (expr_string `'udef'`)
+                  )
+                  (expr_array_item `'id'`
+                    (expr_string `'id'`)
+                  )
+                )
+              )
+            )
+            (expr_int `1`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `5`
+        (expr_int `5`)
+      )
+    )
+  )
+  (stmt_expression `function`
+    (expr_func_call `function`
+      (expr_func_call `function`
+        (expr_func_call `function`
+          (expr_closure `function`
+            (param `$x`)
+            (stmt_block `{`
+              (stmt_return `return`
+                (expr_variable `$x`)
+              )
+            )
+          )
+          (expr_argument `'id'`
+            (expr_string `'id'`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `8`
+        (expr_int `8`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_func_call `=`
+      (expr_func_call `=`
+        (expr_func_call `=`
+          (expr_func_call `=`
+            (expr_func_call `=`
+              (expr_assign `=`
+                (expr_variable `$f`)
+                (expr_closure `function`
+                  (param `$x`
+                    (expr_const_fetch `null`
+                      (name `null`)
+                    )
+                  )
+                  (stmt_block `{`
+                    (stmt_return `return`
+                      (expr_ternary `$x`
+                        (expr_variable `$x`)
+                        (expr_variable `$f`)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `9`
+        (expr_int `9`)
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_func_call `[`
+      (expr_func_call `[`
+        (expr_func_call `[`
+          (expr_func_call `[`
+            (expr_func_call `[`
+              (expr_array `[`
+                (expr_array_item `$obj`
+                  (expr_variable `$obj`)
+                )
+                (expr_array_item `'id'`
+                  (expr_string `'id'`)
+                )
+              )
+            )
+            (expr_argument `'id'`
+              (expr_string `'id'`)
+            )
+          )
+          (expr_argument `$id`
+            (expr_variable `$id`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `10`
+        (expr_int `10`)
+      )
+    )
+  )
+  (stmt_expression `'id'`
+    (expr_func_call `'id'`
+      (expr_func_call `'id'`
+        (expr_func_call `'id'`
+          (expr_func_call `'id'`
+            (expr_string `'id'`)
+          )
+          (expr_argument `'id'`
+            (expr_string `'id'`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `12`
+        (expr_int `12`)
+      )
+    )
+  )
+  (stmt_expression `.`
+    (expr_func_call `.`
+      (expr_func_call `.`
+        (expr_func_call `.`
+          (expr_binary `.`
+            (expr_string `'i'`)
+            (expr_string `'d'`)
+          )
+        )
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `13`
+        (expr_int `13`)
+      )
+    )
+  )
+  (stmt_expression `'\id'`
+    (expr_func_call `'\id'`
+      (expr_func_call `'\id'`
+        (expr_string `'\id'`)
+        (expr_argument `'var_dump'`
+          (expr_string `'var_dump'`)
+        )
+      )
+      (expr_argument `14`
+        (expr_int `14`)
+      )
+    )
+  )
+)

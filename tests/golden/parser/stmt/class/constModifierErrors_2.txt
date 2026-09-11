@@ -1,0 +1,11 @@
+; 1 条诊断
+;   Cannot use 'readonly' as constant modifier from 3:5 to 3:12
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_class_const `const` name=`X`
+      (const_decl `X`
+        (expr_int `1`)
+      )
+    )
+  )
+)

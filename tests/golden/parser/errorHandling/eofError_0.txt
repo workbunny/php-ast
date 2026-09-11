@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Syntax error, unexpected EOF from 2:1 to 2:1
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_const_fetch `foo`
+      (name `foo`)
+    )
+  )
+)

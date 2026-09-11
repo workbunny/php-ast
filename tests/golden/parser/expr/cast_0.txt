@@ -1,0 +1,57 @@
+(root `<?php`
+  (stmt_expression `array`
+    (expr_cast `array`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `bool`
+    (expr_cast `bool`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `boolean`
+    (expr_cast `boolean`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `real`
+    (expr_cast `real`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `double`
+    (expr_cast `double`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `float`
+    (expr_cast `float`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `int`
+    (expr_cast `int`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `integer`
+    (expr_cast `integer`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `object`
+    (expr_cast `object`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `string`
+    (expr_cast `string`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `unset`
+    (expr_cast `unset`
+      (expr_variable `$a`)
+    )
+  )
+)

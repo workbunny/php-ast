@@ -1,0 +1,11 @@
+; 1 条诊断
+;   Unterminated comment from 4:1 to 6:1
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_int `42`)
+    )
+  )
+  (stmt_nop `/*\n$b = 24;\n`)
+)

@@ -1,0 +1,43 @@
+(root `<?php`
+  (stmt_class `class` name=`Point`
+    (stmt_method `function` name=`__construct`
+      (param `$x`
+        (type_name `float`
+          (name `float`)
+        )
+        (expr_float `0.0`)
+      )
+      (param `$y`
+        (type_name `array`
+          (name `array`)
+        )
+        (expr_array `[`)
+      )
+      (param `$z`
+        (type_name `string`
+          (name `string`)
+        )
+        (expr_string `'hello'`)
+      )
+      (param `$a`
+        (type_name `int`
+          (name `int`)
+        )
+        (expr_int `0`)
+      )
+      (param `$h`
+        (property_hook `set`
+          (expr_variable `$value`)
+        )
+      )
+      (param `$g`
+        (expr_int `1`)
+        (property_hook `get`
+          (expr_int `2`)
+        )
+      )
+      (param `$i`)
+      (stmt_block `{`)
+    )
+  )
+)

@@ -1,0 +1,66 @@
+; 9 条诊断
+;   Syntax error, unexpected '{' from 3:3 to 3:3
+;   Syntax error, unexpected '{' from 4:3 to 4:3
+;   Syntax error, unexpected '{' from 5:6 to 5:6
+;   Syntax error, unexpected '{' from 6:8 to 6:8
+;   Syntax error, unexpected '{' from 7:6 to 7:6
+;   Syntax error, unexpected '{' from 8:2 to 8:2
+;   Syntax error, unexpected '{' from 9:5 to 9:5
+;   Syntax error, unexpected '{' from 10:11 to 10:11
+;   Syntax error, unexpected '{' from 11:10 to 11:10
+(root `<?php`
+  (stmt_expression `$a`
+    (expr_variable `$a`)
+  )
+  (stmt_expression `$a`
+    (expr_variable `$a`)
+  )
+  (stmt_expression `$a`
+    (expr_property_fetch `$a`
+      (expr_variable `$a`)
+      (name `b`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_method_call `$a`
+      (expr_property_fetch `$a`
+        (expr_variable `$a`)
+        (name `b`)
+      )
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_const_fetch `A`
+      (name `A`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_class_const_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name `B`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name_var_like `$array`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_property_fetch `$a`
+        (expr_variable `$a`)
+        (name `b`)
+      )
+    )
+  )
+)

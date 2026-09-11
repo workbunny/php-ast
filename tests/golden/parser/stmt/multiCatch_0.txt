@@ -1,0 +1,27 @@
+(root `<?php`
+  (stmt_try `try`
+    (stmt_block `{`
+      (stmt_expression `$x`
+        (expr_variable `$x`)
+      )
+    )
+    (stmt_catch `catch`
+      (name `X`)
+      (name `Y`)
+      (stmt_block `{`
+        (stmt_expression `$y`
+          (expr_variable `$y`)
+        )
+      )
+    )
+    (stmt_catch `catch`
+      (name_fully_qualified `\A`)
+      (name `B\C`)
+      (stmt_block `{`
+        (stmt_expression `$z`
+          (expr_variable `$z`)
+        )
+      )
+    )
+  )
+)

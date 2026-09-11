@@ -1,0 +1,5 @@
+(root `<?php`
+  (stmt_interface `interface` name=`A`
+    (name `PARENT`)
+  )
+)

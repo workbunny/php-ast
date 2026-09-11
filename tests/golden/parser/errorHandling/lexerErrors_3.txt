@@ -1,0 +1,23 @@
+; 2 条诊断
+;   Unexpected character "" (ASCII 1) from 4:1 to 4:1
+;   Unexpected character "" (ASCII 2) from 6:1 to 6:1
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$b`)
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$c`)
+      (expr_int `3`)
+    )
+  )
+)

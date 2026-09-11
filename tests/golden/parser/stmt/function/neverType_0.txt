@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (type_name `never`
+      (name `never`)
+    )
+    (stmt_block `{`)
+  )
+)

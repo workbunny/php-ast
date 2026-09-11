@@ -1,0 +1,30 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (param `$a`)
+    (param `$b`)
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`)
+    (param `$b`)
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`)
+    (param `$b`
+      (type_name `Type`
+        (name `Type`)
+      )
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`)
+    (param `$b`
+      (type_name `Type`
+        (name `Type`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

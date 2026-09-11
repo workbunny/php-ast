@@ -407,7 +407,16 @@ pub const Lexer = struct {
             // 前导点浮点 `.5`：`.` 后紧跟数字（区别于成员访问 `.` 运算符）。
             if (c == '.' and i + 1 < n and isDigitChar(source[i + 1])) {
                 var e = i + 1;
-                while (e < n and (isDigitChar(source[e]) or source[e] == '_')) : (e += 1) {}
+                while (e < n) : (e += 1) {
+                    const ch = source[e];
+                    if (ch == '_') {
+                        // 同十进制字面量：`_` 仅在两侧都是数字时属字面量。
+                        if (e > i + 1 and isDigitChar(source[e - 1]) and
+                            e + 1 < n and isDigitChar(source[e + 1])) continue;
+                        break;
+                    }
+                    if (!isDigitChar(ch)) break;
+                }
                 if (e < n and (source[e] == 'e' or source[e] == 'E')) {
                     var f = e + 1;
                     if (f < n and (source[f] == '+' or source[f] == '-')) f += 1;
@@ -448,7 +457,13 @@ pub const Lexer = struct {
                             e = t;
                             while (e < n) : (e += 1) {
                                 const ch = source[e];
-                                if (ch == '_') continue;
+                                if (ch == '_') {
+                                    // `_` 只在两侧都是合法位时属字面量（`0x7AFE_F00D`）；
+                                    // 否则字面量就此结束，`_` 交给标识符扫描。
+                                    if (e > t and legal(source[e - 1], is_hex, is_bin) and
+                                        e + 1 < n and legal(source[e + 1], is_hex, is_bin)) continue;
+                                    break;
+                                }
                                 if (!legal(ch, is_hex, is_bin)) break;
                             }
                             try out.append(gpa, .{ .tag = .int_literal, .start = i, .end = e });
@@ -463,7 +478,15 @@ pub const Lexer = struct {
                 // 十进制：整数/浮点（`.` 与 `e` 指数）
                 while (e < n) : (e += 1) {
                     const ch = source[e];
-                    if (isDigitChar(ch) or ch == '_') continue;
+                    if (ch == '_') {
+                        // `_` 仅在两侧都是数字时属字面量（`1_000`）；否则字面量在此结束、
+                        // `_` 交给标识符扫描。php-parser 同：`100_` = 整数 `100` + 标识符
+                        // `_`（报 unexpected T_STRING），`1._0` = 浮点 `1.` + 标识符 `_0`。
+                        if (e > i and isDigitChar(source[e - 1]) and
+                            e + 1 < n and isDigitChar(source[e + 1])) continue;
+                        break;
+                    }
+                    if (isDigitChar(ch)) continue;
                     if (ch == '.' and !is_float) {
                         is_float = true;
                         continue;

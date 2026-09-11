@@ -1,0 +1,43 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (param `$a`
+      (type_name `bool`
+        (name `bool`)
+      )
+    )
+    (param `$b`
+      (type_name `Int`
+        (name `Int`)
+      )
+    )
+    (param `$c`
+      (type_name `FLOAT`
+        (name `FLOAT`)
+      )
+    )
+    (param `$d`
+      (type_name `StRiNg`
+        (name `StRiNg`)
+      )
+    )
+    (param `$e`
+      (type_name `iterable`
+        (name `iterable`)
+      )
+    )
+    (param `$f`
+      (type_name `object`
+        (name `object`)
+      )
+    )
+    (param `$g`
+      (type_name `mixed`
+        (name `mixed`)
+      )
+    )
+    (type_name `void`
+      (name `void`)
+    )
+    (stmt_block `{`)
+  )
+)

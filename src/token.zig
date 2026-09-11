@@ -267,7 +267,9 @@ pub const Token = struct {
         .{ .t = "halt_compiler", .tag = .kw_halt_compiler },
     };
 
-    /// 运算符/标点表：按文本长度从长到短排列。
+    /// 运算符/标点表：**多字符项集中在单字符项之前**——词法器按本表顺序首次匹配即用，
+    /// 故一个运算符必须先于它的前缀出现（如 `==` 先于 `=`、`?->` 先于 `?`）；同段内
+    /// 各项互不为前缀，组内顺序不影响正确性。
     ///
     /// 顺序有语义：多字符运算符必须优先于单字符（如 `==` 先于 `=`），词法器按此
     /// 顺序首次匹配即用。`lexeme` 亦由此表反查，避免两处各写一份。
@@ -346,6 +348,17 @@ pub const Token = struct {
     pub fn keywordTag(t: []const u8) ?Tag {
         for (keywords) |k| {
             if (std.mem.eql(u8, k.t, t)) return k.tag;
+        }
+        return null;
+    }
+
+    /// 同 `keywordTag`，但**忽略大小写**。PHP 关键字大小写不敏感（`Class` / `STATIC`
+    /// / `ReadOnly` 与全小写等价），词法器为保持「文本片段即源码」的零拷贝语义仍按
+    /// 原样切片，需要「该标识符是否是关键字」判断的场合（诊断显示名、声明名位禁用
+    /// 判定）走此函数回判。
+    pub fn keywordTagIgnoreCase(t: []const u8) ?Tag {
+        for (keywords) |k| {
+            if (std.ascii.eqlIgnoreCase(k.t, t)) return k.tag;
         }
         return null;
     }

@@ -1,0 +1,92 @@
+; 16 条诊断
+;   A trailing comma is not allowed here from 5:6 to 5:6
+;   A trailing comma is not allowed here from 6:13 to 6:13
+;   A trailing comma is not allowed here from 8:21 to 8:21
+;   A trailing comma is not allowed here from 9:10 to 9:10
+;   A trailing comma is not allowed here from 10:10 to 10:10
+;   A trailing comma is not allowed here from 11:25 to 11:25
+;   A trailing comma is not allowed here from 13:17 to 13:17
+;   A trailing comma is not allowed here from 14:14 to 14:14
+;   A trailing comma is not allowed here from 16:22 to 16:22
+;   A trailing comma is not allowed here from 21:13 to 21:13
+;   A trailing comma is not allowed here from 23:10 to 23:10
+;   A trailing comma is not allowed here from 24:10 to 24:10
+;   A trailing comma is not allowed here from 25:8 to 25:8
+;   A trailing comma is not allowed here from 27:8 to 27:8
+;   A trailing comma is not allowed here from 27:14 to 27:14
+;   A trailing comma is not allowed here from 27:20 to 27:20
+(root `<?php`
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `B`
+      (name `B`)
+    )
+  )
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `b`
+      (name `b`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `A`
+      (name `A`)
+    )
+  )
+  (stmt_const `const`
+    (const_decl `A`
+      (expr_int `42`)
+    )
+  )
+  (stmt_class `class` name=`X`
+    (name `Y`)
+    (stmt_trait_use `use`
+      (name `A`)
+    )
+    (stmt_trait_use `use`
+      (name `A`)
+      (trait_use_adaptation_precedence `b`
+        (name `A`)
+      )
+    )
+    (stmt_class_const `const` name=`A`
+      (const_decl `A`
+        (expr_int `42`)
+      )
+    )
+    (stmt_property `$x`
+      (property_item `$x`)
+    )
+  )
+  (stmt_interface `interface` name=`I`
+    (name `J`)
+  )
+  (stmt_unset `unset`
+    (expr_variable `$x`)
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_declare `declare`
+    (declare_declare `a`
+      (expr_int `42`)
+    )
+  )
+  (stmt_global `global`
+    (expr_variable `$a`)
+  )
+  (stmt_static `static`
+    (static_var `$a`)
+  )
+  (stmt_echo `echo`
+    (expr_variable `$a`)
+  )
+  (stmt_for `for`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (expr_variable `$c`)
+    (stmt_nop `;`)
+  )
+)

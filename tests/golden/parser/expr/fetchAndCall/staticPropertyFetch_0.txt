@@ -1,0 +1,38 @@
+(root `<?php`
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (expr_string `'b'`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_static_property_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name_var_like `$b`)
+      )
+      (expr_string `'c'`)
+    )
+  )
+  (stmt_nop `// class name variations can be found in staticCall.test`)
+)

@@ -1,0 +1,7 @@
+; 1 条诊断
+;   Cannot use the final modifier on an abstract class member from 1:26 to 1:30
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_method `function` name=`a`)
+  )
+)

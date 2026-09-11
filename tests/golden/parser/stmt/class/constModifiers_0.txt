@@ -1,0 +1,29 @@
+(root `<?php`
+  (stmt_class `class` name=`Foo`
+    (stmt_class_const `const` name=`A`
+      (const_decl `A`
+        (expr_int `1`)
+      )
+    )
+    (stmt_class_const `const` name=`B`
+      (const_decl `B`
+        (expr_int `2`)
+      )
+    )
+    (stmt_class_const `const` name=`C`
+      (const_decl `C`
+        (expr_int `3`)
+      )
+    )
+    (stmt_class_const `const` name=`D`
+      (const_decl `D`
+        (expr_int `4`)
+      )
+    )
+    (stmt_class_const `const` name=`E`
+      (const_decl `E`
+        (expr_int `5`)
+      )
+    )
+  )
+)

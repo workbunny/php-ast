@@ -1,0 +1,43 @@
+(root `<?php`
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_array_dim_fetch `+`
+        (expr_binary `+`
+          (expr_array `[`
+            (expr_array_item `0`
+              (expr_int `0`)
+            )
+            (expr_array_item `1`
+              (expr_int `1`)
+            )
+          )
+          (expr_array `[`)
+        )
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_property_fetch `[`
+        (expr_array `[`
+          (expr_array_item `'b'`
+            (expr_string `'b'`)
+            (expr_string `'a'`)
+          )
+        )
+        (name `a`)
+      )
+    )
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_property_fetch `"`
+        (expr_encapsed `"`
+          (expr_string_part `str`)
+        )
+        (name `a`)
+      )
+    )
+  )
+)

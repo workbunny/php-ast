@@ -1,0 +1,36 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (type_intersection `&`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+      (property_item `$prop`)
+    )
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`
+      (type_intersection `&`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+    )
+    (type_intersection `&`
+      (type_name `A`
+        (name `A`)
+      )
+      (type_name `B`
+        (name `B`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

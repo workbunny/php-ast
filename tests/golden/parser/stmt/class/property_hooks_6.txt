@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$foo`
+      (property_item `$foo`)
+      (property_item `$bar`)
+    )
+  )
+)

@@ -1,0 +1,6 @@
+(root `<?php`
+  (stmt_if `if`
+    (expr_int `42`)
+    (stmt_block `{`)
+  )
+)

@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `A`)
+    (stmt_namespace `namespace`
+      (name `B`)
+    )
+  )
+)

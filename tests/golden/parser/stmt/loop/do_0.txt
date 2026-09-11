@@ -1,0 +1,6 @@
+(root `<?php`
+  (stmt_do `do`
+    (stmt_block `{`)
+    (expr_variable `$a`)
+  )
+)

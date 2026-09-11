@@ -118,6 +118,47 @@ pub const Parser = struct {
         p.addErrorRange(tag, start, end, aux, data);
     }
 
+    /// 语法类诊断：额外写明「期望集合」（渲染 `, expecting ...`）。php-parser 的期望
+    /// 集合由 LALR 状态决定，同一判据在不同语法位置不同，故由报点显式指定。
+    pub fn addErrorExpected(
+        p: *Parser,
+        tag: ast.Error.Tag,
+        expected: ast.Error.Expected,
+        start: TokenIndex,
+        end: TokenIndex,
+        aux: TokenIndex,
+        data: u32,
+    ) void {
+        if (p.hasErrorAt(tag, start, end)) return;
+        p.errors.append(p.gpa, .{
+            .tag = tag,
+            .token = start,
+            .token_end = end,
+            .aux = aux,
+            .data = data,
+            .required = BASE_VERSION,
+            .expected = expected,
+        }) catch {};
+    }
+
+    /// 该 tag 是否已在 `[start, end]` 区间报过（跨整份诊断表的去重）。
+    fn hasErrorAt(p: *const Parser, tag: ast.Error.Tag, start: TokenIndex, end: TokenIndex) bool {
+        for (p.errors.items) |e| {
+            if (e.tag == tag and e.token == start and e.token_end == end) return true;
+        }
+        return false;
+    }
+
+    /// 定位到指定 token 并带期望集合的诊断（便捷形式）。
+    pub fn warnAtExpected(
+        p: *Parser,
+        tag: ast.Error.Tag,
+        token: TokenIndex,
+        expected: ast.Error.Expected,
+    ) void {
+        p.addErrorExpected(tag, expected, token, token, token, 0);
+    }
+
     fn addErrorRange(
         p: *Parser,
         tag: ast.Error.Tag,
@@ -126,13 +167,11 @@ pub const Parser = struct {
         aux: TokenIndex,
         data: u32,
     ) void {
-        // 错误恢复常在同一点多次触发**同一判据**（相邻 last 同 tag 同区间即视为
-        // 重复，不再报）。不同 tag 可同区间并存（php-parser 对同一 token 会报多条
-        // 不同消息，如钩子上的 `public public` = hook modifier + Multiple access）。
-        if (p.errors.items.len > 0) {
-            const last = p.errors.items[p.errors.items.len - 1];
-            if (last.tag == tag and last.token == start and last.token_end == end) return;
-        }
+        // 错误恢复常在同一点多次触发**同一判据**（恢复路径分叉后重复走到同一报点，
+        // 如 `Bar::)` 经成员名恢复与实参恢复各报一次）——同 tag 同区间在全表内只留
+        // 一条。不同 tag 可同区间并存（php-parser 对同一 token 会报多条不同消息，
+        // 如钩子上的 `public public` = hook modifier + Multiple access）。
+        if (p.hasErrorAt(tag, start, end)) return;
         p.errors.append(p.gpa, .{
             .tag = tag,
             .token = start,
@@ -184,6 +223,11 @@ pub const Parser = struct {
     /// 当前游标 token 的 tag；token 序列耗尽时为 eof。
     pub fn tokTag(p: *const Parser) Token.Tag {
         return p.tokens.items(.tag)[p.tok_i];
+    }
+
+    /// 当前 token 是否为短回显开标签 `<?=`——与 `<?php` 同为 `open_tag`，按文本区分。
+    pub fn isShortEchoTag(p: *const Parser) bool {
+        return p.tokTag() == .open_tag and std.mem.eql(u8, p.tokSlice(), "<?=");
     }
 
     /// 返回当前游标 token 对应的源片段切片。
@@ -258,6 +302,33 @@ pub const Parser = struct {
         }
     }
 
+    /// 错误恢复：**按括号配对**滑过 token，直到深度 0 时遇到 `term` 或语句边界
+    /// `;`（或 eof）。`consume_term` 为真且停在 `term` 时消费它并返回该 token。
+    ///
+    /// 用途：列表型构造（实参表、数组元素、组 use 等）在项解析失败后就地恢复——
+    /// 把夹杂的 token 连同其中的子括号一并消化，既不连锁多报，也不泄漏到外层被当
+    /// 新语句；结束符是否由本函数消费由调用方决定（外层 `eatToken` 兜底不报诊断）。
+    ///
+    /// 深度 0 遇右括号（含 `term` 本身）即停驻不越界；`;` 深度 0 亦停驻，避免吞掉
+    /// 后续语句。
+    pub fn skipBalancedTo(p: *Parser, term: Token.Tag, consume_term: bool) ?TokenIndex {
+        var depth: usize = 0;
+        while (p.tokTag() != .eof) {
+            const t = p.tokTag();
+            if (t == .lparen or t == .lbracket or t == .lbrace) {
+                depth += 1;
+            } else if (t == .rparen or t == .rbracket or t == .rbrace) {
+                if (depth == 0) break;
+                depth -= 1;
+            } else if (t == .semicolon and depth == 0) {
+                break;
+            }
+            _ = p.nextToken();
+        }
+        if (consume_term and p.tokTag() == term) return p.nextToken();
+        return null;
+    }
+
     /// 能否作为一条新语句的起始 token（错误恢复的同步点判定）。标识符亦计入——
     /// 吞掉后续语句（漏报其错误）比在该点多报一条更不可接受。
     fn isStmtStartTag(tag: Token.Tag) bool {
@@ -288,19 +359,6 @@ pub const Parser = struct {
         p.skipToStmtSync(false);
     }
 
-    /// 原始实现：跨过 `;`、区块、行注释或文件尾（吞掉整块）。
-    pub fn skipToNextStmtBlock(p: *Parser) ast.ParseError!void {
-        while (p.tokTag() != .eof) : (p.tok_i += 1) {
-            switch (p.tokTag()) {
-                .semicolon, .rbrace, .eof => {
-                    p.tok_i += 1;
-                    return;
-                },
-                .close_tag => return,
-                else => {},
-            }
-        }
-    }
 
     pub fn parseRoot(p: *Parser) ast.ParseError!Index {
         while (p.tokTag() == .open_tag) _ = p.nextToken();

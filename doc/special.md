@@ -170,8 +170,8 @@ php-parser 的 parse 带引擎级语义检查（grammar 动作里即报、recove
   上（修饰符、`(`、`{`、参数类型、默认值表达式等）；部分报在**整个构造**上（如 try 语句、
   命名空间声明、const 声明、管道右操作数）
 
-当前与 php-parser 的文本/位置对齐度由 `zig build check-parity` 度量，报告落
-`tests/diagnostic_report.txt`（含每条差异的期望/实际与源码行）。
+当前与 php-parser 的文本/位置对齐度由 `zig build conformance -- --php-parser <参照路径>`
+度量，报告落 `zig-out/conformance/diagnostic_report.txt`（含每条差异的期望/实际与源码行）。
 
 #### 字符串与数字解码诊断
 
@@ -188,10 +188,10 @@ php-parser 的 parse 带引擎级语义检查（grammar 动作里即报、recove
 
 #### 与 php-parser 的接受/拒绝面
 
-对照数据源为 `tests/third_party/php-parser` 的测试子集（178 个 `.test` / 278 段），
-运行 `zig build check-parity` 可复现，接受面报告落 `tests/acceptance_report.txt`、
-诊断质量报告落 `tests/diagnostic_report.txt`。判定口径：「`parse` 与 `semantic.check`
-均无诊断」才算接受。
+对照数据源为 PHP-Parser 的 parser 测试用例（178 个 `.test` / 278 段，路径经
+`--php-parser` 指定），运行 `zig build conformance -- --php-parser <参照路径>` 可复现，
+两份报告（接受面 / 诊断质量）默认落 `zig-out/conformance/`。判定口径：「`parse` 与
+`semantic.check` 均无诊断」才算接受。
 
 当前版本下，期望接受的段全部通过、期望报错的段全部有诊断——不存在「php-parser 拒绝而
 本库接受」的条目。其中若干判据依赖「报错后继续解析」的恢复行为，本库产出诊断即止，

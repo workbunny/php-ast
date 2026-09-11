@@ -1,0 +1,50 @@
+(root `<?php`
+  (stmt_expression `0.0`
+    (expr_float `0.0`)
+  )
+  (stmt_expression `0.`
+    (expr_float `0.`)
+  )
+  (stmt_expression `.0`
+    (expr_float `.0`)
+  )
+  (stmt_expression `0e0`
+    (expr_float `0e0`)
+  )
+  (stmt_expression `0E0`
+    (expr_float `0E0`)
+  )
+  (stmt_expression `0e+0`
+    (expr_float `0e+0`)
+  )
+  (stmt_expression `0e-0`
+    (expr_float `0e-0`)
+  )
+  (stmt_expression `30.20e10`
+    (expr_float `30.20e10`)
+  )
+  (stmt_expression `300.200e100`
+    (expr_float `300.200e100`)
+  )
+  (stmt_expression `1e10000`
+    (expr_float `1e10000`)
+  )
+  (stmt_expression `18446744073709551615`
+    (expr_int `18446744073709551615`)
+  )
+  (stmt_expression `0xFFFFFFFFFFFFFFFF`
+    (expr_int `0xFFFFFFFFFFFFFFFF`)
+  )
+  (stmt_expression `0xEEEEEEEEEEEEEEEE`
+    (expr_int `0xEEEEEEEEEEEEEEEE`)
+  )
+  (stmt_expression `01777777777777777777777`
+    (expr_int `01777777777777777777777`)
+  )
+  (stmt_expression `0177777777777777777777787`
+    (expr_int `0177777777777777777777787`)
+  )
+  (stmt_expression `0b1111111111111111111111111111111111111111111111111111111111111111`
+    (expr_int `0b1111111111111111111111111111111111111111111111111111111111111111`)
+  )
+)

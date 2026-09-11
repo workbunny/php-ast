@@ -1,0 +1,31 @@
+(root `<?php`
+  (stmt_declare `declare`
+    (declare_declare `X`
+      (expr_string `'Y'`)
+    )
+  )
+  (stmt_declare `declare`
+    (stmt_block `{`
+      (stmt_echo `echo`
+        (expr_encapsed `"`
+          (expr_string_part `foo`)
+        )
+      )
+    )
+    (declare_declare `A`
+      (expr_string `'B'`)
+    )
+    (declare_declare `C`
+      (expr_string `'D'`)
+    )
+  )
+  (stmt_declare `declare`
+    (stmt_block `:`)
+    (declare_declare `A`
+      (expr_string `'B'`)
+    )
+    (declare_declare `C`
+      (expr_string `'D'`)
+    )
+  )
+)

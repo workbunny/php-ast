@@ -1,0 +1,7 @@
+(root `<?php`
+  (stmt_expression `function`
+    (expr_closure `function`
+      (stmt_block `{`)
+    )
+  )
+)

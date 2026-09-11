@@ -1,0 +1,44 @@
+(root `<?php`
+  (stmt_expression `void`
+    (expr_cast `void`
+      (expr_func_call `foo`
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_expression `VOID`
+    (expr_cast `VOID`
+      (expr_func_call `foo`
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_expression `or`
+    (expr_binary `or`
+      (expr_cast `void`
+        (expr_variable `$a`)
+      )
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_for `for`
+    (expr_cast `void`
+      (expr_func_call `a`
+        (name `a`)
+      )
+    )
+    (expr_variable `$b`)
+    (expr_cast `void`
+      (expr_variable `$c`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$x`)
+      (expr_cast `void`
+        (expr_variable `$y`)
+      )
+    )
+  )
+)

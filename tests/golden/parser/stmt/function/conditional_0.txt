@@ -1,0 +1,12 @@
+(root `<?php`
+  (stmt_if `if`
+    (expr_const_fetch `true`
+      (name `true`)
+    )
+    (stmt_block `{`
+      (stmt_function `function` name=`A`
+        (stmt_block `{`)
+      )
+    )
+  )
+)

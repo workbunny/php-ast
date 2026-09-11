@@ -1,0 +1,41 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (type_union `|`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_union `|`
+          (type_name `iterable`
+            (name `iterable`)
+          )
+          (type_name `null`
+            (name `null`)
+          )
+        )
+      )
+      (property_item `$prop`)
+    )
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`
+      (type_union `|`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+    )
+    (type_union `|`
+      (type_name `int`
+        (name `int`)
+      )
+      (type_name `false`
+        (name `false`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

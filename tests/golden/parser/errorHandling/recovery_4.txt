@@ -1,0 +1,7 @@
+; 1 条诊断
+;   Syntax error, unexpected '}' from 4:1 to 4:1
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (stmt_block `{`)
+  )
+)

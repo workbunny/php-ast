@@ -1,0 +1,11 @@
+; 1 条诊断
+;   Multiple access type modifiers are not allowed from 3:12 to 3:17
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_class_const `const` name=`X`
+      (const_decl `X`
+        (expr_int `1`)
+      )
+    )
+  )
+)

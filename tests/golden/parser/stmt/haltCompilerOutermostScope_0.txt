@@ -1,0 +1,10 @@
+(root `<?php`
+  (stmt_if `if`
+    (expr_const_fetch `true`
+      (name `true`)
+    )
+    (stmt_block `{`
+      (stmt_halt `__halt_compiler`)
+    )
+  )
+)

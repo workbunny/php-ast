@@ -1,0 +1,21 @@
+; 3 条诊断
+;   Syntax error, unexpected T_STRING from 4:1 to 4:3
+;   Syntax error, unexpected T_STRING from 5:1 to 5:3
+;   Syntax error, unexpected EOF from 6:1 to 6:1
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_func_call `foo`
+      (name `foo`)
+    )
+  )
+  (stmt_expression `bar`
+    (expr_func_call `bar`
+      (name `bar`)
+    )
+  )
+  (stmt_expression `baz`
+    (expr_func_call `baz`
+      (name `baz`)
+    )
+  )
+)

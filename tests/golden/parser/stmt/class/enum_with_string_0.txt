@@ -1,0 +1,17 @@
+(root `<?php`
+  (stmt_enum `enum` name=`Suit`
+    (type_name `string`
+      (name `string`)
+    )
+    (stmt_case `case` name=`Hearts`
+      (expr_string `'H'`)
+    )
+    (stmt_case `case` name=`Diamonds`)
+    (stmt_case `case` name=`Clubs`
+      (expr_string `'C'`)
+    )
+    (stmt_case `case` name=`Spades`
+      (expr_string `'S'`)
+    )
+  )
+)

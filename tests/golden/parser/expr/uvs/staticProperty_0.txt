@@ -1,0 +1,70 @@
+(root `<?php`
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `$A`
+    (expr_static_property_fetch `$A`
+      (expr_variable `$A`)
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `'A'`
+    (expr_static_property_fetch `'A'`
+      (expr_string `'A'`)
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `.`
+    (expr_static_property_fetch `.`
+      (expr_binary `.`
+        (expr_string `'A'`)
+        (expr_string `''`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `'A'`
+    (expr_static_property_fetch `'A'`
+      (expr_array_dim_fetch `'A'`
+        (expr_string `'A'`)
+        (expr_int `0`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_static_property_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (expr_variable `$c`)
+      )
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_static_property_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name_var_like `$A`)
+      )
+      (name_var_like `$b`)
+    )
+  )
+)

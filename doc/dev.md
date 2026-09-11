@@ -16,12 +16,12 @@
 | `src/`                          | 库实现。每个源文件**尾部**内嵌该文件的单元测试                  |
 | `src/coverage.zig`              | 覆盖矩阵：编译期校验每个节点/词法种类都有用例                   |
 | `src/golden.zig`                | 黄金快照比对逻辑（数据在 `tests/golden`）                       |
-| `tests/golden/`                 | 黄金快照：`*.php` 源码与同名 `*.txt`（AST dump）成对            |
-| `tests/third_party/php-parser/` | PHP-Parser 5.8.0 测试子集（BSD 3-Clause，含 `LICENSE`），供对照 |
+| `tests/golden/`                 | 黄金快照：`*.php` 源码与同名 `*.txt`（AST dump）成对；`parser/` 子目录由迁移而来 |
 | `tools/`                        | 开发工具（不随库编译，见 §2.4）                                 |
+| `LICENSES/`、`NOTICE.md`        | 第三方内容（PHP-Parser）的许可全文与出处声明                    |
 
-约定：`third_party/` 内容原样保留，不增删不改；需要基于其样例扩展时，另存文件并注明
-来源。
+约定：迁入的 PHP 源码（`tests/golden/parser/**`）是其上游测试数据的衍生内容，受 BSD
+3-Clause 约束——出处与许可声明必须随分发保留（见 §5）。
 
 ## 2. 测试体系
 
@@ -30,7 +30,8 @@
 | 单元测试   | `src/*.zig` 尾部 `test "..."` 块 | `zig build test`                                       | 单条特性行为（解析结果 / 遍历 / API）    |
 | 覆盖矩阵   | `src/coverage.zig`               | 同上（**编译期**校验）                                 | 每个 `Node.Tag`/`Token.Tag` 都有最小用例 |
 | 黄金快照   | `tests/golden/**`                | `zig build test`（自动比对）；`-Dupdate-golden` 重生成 | 整棵树结构（含诊断）逐字节锁定           |
-| 一致性对照 | `tools/parity_check.zig`          | `zig build check-parity`                               | 与 PHP-Parser 测试子集的接受面与诊断质量  |
+| 快照源码   | `tools/golden_gen.zig`           | `zig build golden-gen -- --php-parser <路径>`           | 上游用例代码段 → `tests/golden/parser` 源码 |
+| 符合性对照 | `tools/conformance.zig`          | `zig build conformance -- --php-parser <路径>`          | 接受面与诊断质量（报告 + 门禁）          |
 
 ### 2.1 单元测试
 
@@ -68,6 +69,14 @@ zig test src/root.zig --test-filter "expr :: 赋值"
 **机制**：`tests/golden/**/*.php` 解析后与同名 `*.txt` 逐字节比对；诊断也会写入快照，
 所以"引入了新错误"同样会被比出来。
 
+**快照来源（两类）**：
+
+- `tests/golden/parser/**`：上游（PHP-Parser）测试用例的代码段（278 段，来源与许可
+  见 `NOTICE.md`）。`zig build golden-gen -- --php-parser <路径>` 按当前用例重新导出
+  源码（幂等覆盖 `*.php`，不碰 `*.txt`；`--prune` 清理上游已删除的旧快照）；用例
+  增删后跑一次 `golden-gen` + `-Dupdate-golden` 即可对齐。
+- `tests/golden/{decl,expr,stmt}`：手写样例，覆盖迁移用例未触及的组合。
+
 **何时更新**：解析行为有意变更（新增语法、修 bug 改变结构）后，快照会失败。此时：
 
 ```sh
@@ -81,38 +90,36 @@ git diff tests/golden            # 复核：只应含预期的结构变化
 **新增 fixture**：在 `tests/golden` 相应子目录放 `*.php`，跑一次 `-Dupdate-golden`
 生成 `*.txt`，提交成对文件。
 
-### 2.4 一致性对照（tools/parity_check）
+### 2.4 符合性对照（tools/conformance）
 
-`parity_check` 是独立于常规测试的**开发工具**（`zig build test` 不包含它）：以
-PHP-Parser 的测试子集为基准（oracle），把代码段逐个喂给本解析器，度量两边是否一致。
-术语与判定口径见工具头部注释；这里给使用工作流。
+`conformance` 是独立于常规测试的**开发工具**（`zig build test` 不包含它）：以
+PHP-Parser 的测试用例为 oracle（参照），把代码段逐个喂给本解析器，度量接受面与诊断
+质量是否一致，并做**防回归门禁**。术语与判定口径见工具头部注释；这里给使用工作流。
+
+PHP-Parser 是**开发期参照，不是构建依赖**：未提供路径时工具直接成功退出，下游 clone
+不会因缺少参照而失败。。
 
 #### 2.4.1 数据与格式
 
-- **数据源**：`tests/third_party/php-parser/test/code/parser`（178 个 `.test`，
-  目录结构与上游一致；内容勿改，见 §1）。
-- **`.test` 格式**：首行标题，之后以 `-----` 分隔的 (代码段, 期望段) 交替对。
-  期望段以 `array(` 开头 = PHP-Parser 接受该代码；以错误说明开头 = 应报错。
-  期望段首行的 `!!version=X.Y` 是版本 mode（该段在指定版本下解析），其余 mode 忽略。
-- 代码段中的 `@@{expr}@@` 是 PHP-Parser 测试宏（eval 注入内容），工具会先展开再
-  解析，读报告时无需理会。
+- **数据源**：由命令行给出，指向 PHP-Parser 仓库根或其 `test/code/parser`（工具自适应，
+  见 `tools/fixtures.zig` 的 `resolveParserDir`）。工具不随库固化任何参照副本。
+- **`.test` 格式**：首行标题，之后以 `-----` 分隔的 (代码段, 期望段) 交替对。期望段以
+  `array(` 开头 = PHP-Parser 接受该代码；以错误说明开头 = 应报错。期望段首行的
+  `!!version=X.Y` 是版本 mode（该段在指定版本下解析），其余 mode 忽略。代码段中的
+  `@@{expr}@@` 是 PHP-Parser 测试宏（eval 注入内容），工具先展开再解析，读报告时无需
+  理会。切分与展开的实现集中在 `tools/fixtures.zig`——与快照迁移共用同一份规则。
 
 #### 2.4.2 运行与输出
 
-在**仓库根目录**运行（工具用相对路径读写数据源与报告）：
+在**仓库根目录**运行：
 
 ```sh
-zig build check-parity --summary all        # 默认基准（库内 tests/third_party）
-zig build check-parity -- <基准目录>        # 指定基准（某处 php-parser 的
-                                             # test/code/parser 目录）
+zig build conformance -- --php-parser <PHP-Parser 仓库根或 test/code/parser>
+                          [--report-dir <目录>]     # 默认 zig-out/conformance
+                          [--known-diffs <文件>]    # 默认 tools/known_diffs.txt
 ```
 
-- 默认：基准 = 随库收录的 `tests/third_party/php-parser/test/code/parser`，报告写在
-  **仓库根**（`acceptance_report.txt` / `diagnostic_report.txt`）。
-- 指定基准目录：对照该目录（如对自定义/更新的 php-parser clone），报告写进**该目录**，
-  便于与基准同处对照；用毕清理（勿把报告留在 `tests/third_party` 对照源里）。
-
-工具本身恒通过（只报告不判定）。产物两份：
+产物两份（默认落 `zig-out/conformance/`，属生成物、不入库）：
 
 - `acceptance_report.txt` —— 接受面：头部统计后按两类列出差距：
   1. **误拒**（期望接受却有诊断）：本库该接受却没接受，逐条列出 `路径[段号]` +
@@ -120,28 +127,33 @@ zig build check-parity -- <基准目录>        # 指定基准（某处 php-pars
   2. **漏报**（期望报错却无诊断）：PHP-Parser 报错但本库没报。这是**要人工核对**
      的清单——两种去向：属收集式错误模型的有意宽松（在 `doc/special.md` 错误模型节
      注明即可），或确属拒绝漏报（修复）。
-- `tests/diagnostic_report.txt` —— 诊断质量：两边都报的段里，按 条数/文本/位置
+- `diagnostic_report.txt` —— 诊断质量：两边都报的段里，按 条数/文本/位置
   逐条比对的一致度与差异明细（每条附源码行、期望、实际），供逐条校准。
+
+**门禁**：报告写出后判定——差异段必须落在 `known_diffs.txt` 的白名单内，且全等段数
+不得低于该文件的 `baseline`；不符即以非零码退出，`zig build conformance` 因此可直接
+用作 CI 门禁。`known_diffs.txt` 是**入库的受控资产**：缺失（或 `--known-diffs` 指向不
+存在的文件）直接报错，避免门禁静默失效。
 
 #### 2.4.3 从报告到修复
 
-1. 打开 `tests/acceptance_report.txt`，先看头部统计确认没有整体漂移（如 `.test` 数
-   不符，多半是数据源路径/拷贝问题）。
-2. 取一条：`路径[段号]` 对应 `tests/third_party/php-parser/test/code/parser/路径`
-   文件里的第 `段号` 个代码段（0 基）。**段号 ×2 +1** 即该段的期望段（可确认
-   PHP-Parser 期望什么结构）。
-3. 把该代码段复制成最小用例（拆到一两句），在 `src/` 建临时文件复现根因。修复后
-   在该文件尾部补正式单元测试，并检查是否需要扩 golden（§2.3）。
-4. **清理临时文件**：`dbg_*.zig` 等探针是调试手段，不属于库产物，改完即删。
-5. 复跑 `zig build check-parity` 确认该条消失、没有新增同类别条目。
-6. 诊断质量的差异逐条校准到全等（或登记为有意差异，见 §2.4.4）。
+1. 打开 `zig-out/conformance/acceptance_report.txt`，先看头部统计确认没有整体漂移
+   （如 `.test` 数不符，多半是参照路径给错）。
+2. 取一条：`路径[段号]` 对应 `<参照目录>/路径` 里的第 `段号` 个代码段（0 基）。
+   `.test` 内 **段号 ×2 +1** 即该段的期望段（可确认 PHP-Parser 期望什么）。
+3. 把该代码段复制成最小用例（拆到一两句）复现根因。修复后补正式单元测试，并检查是否
+   需要扩快照（§2.3）。
+4. **清理临时文件**：调试探针不属于库产物，改完即删。
+5. 复跑 `zig build conformance -- --php-parser <路径>` 确认该条消失、没有新增同类别条目。
+6. 诊断质量的差异逐条校准到全等；确实无法对齐的登记进 `tools/known_diffs.txt` 并写明
+   成因（格式与维护要求见 §5）。
 
 > 提示：修复要防"贪快"。逐点打补丁会让同类差距散落多处——先看若干条是否同一
 > 根因（如某 token 未识别、某状态机漏状态），在底层一次性修，再复扫验证。
 
 #### 2.4.4 与 PHP-Parser 的已知差异一览
 
-对照 fixture 时，若同一代码段的 EXPECT 结构（PHP-Parser 的 dump）与我们的树不一致，
+对照上游用例时，若同一代码段的 EXPECT 结构（PHP-Parser 的 dump）与我们的树不一致，
 多数不是缺口，而是**有意的归一/布局差异**——接受/拒绝判定一致，只是表示方式不同。
 下表速查这些差异；逐模式的完整说明见 `doc/special.md`。
 
@@ -203,9 +215,9 @@ std.debug.print("{s}", .{buf.written()});
 
 ### 3.4 最小复现
 
-大 fixture 一次给出多个错误时，把输入逐段减到最小单句，逐个确认哪句触发。对照
-`tests/third_party/php-parser/test/code/` 下同名 `.test` 的期望段，能确认"该不该接受"
-与"接受后长什么样"。
+大用例一次给出多个错误时，把输入逐段减到最小单句，逐个确认哪句触发。对照参照目录下
+同名 `.test` 的期望段（`<参照目录>/路径`，见 §2.4.3），能确认"该不该接受"与"接受后
+长什么样"；本地同名快照（`tests/golden/parser/<路径>_<段号>.php`）可直接取用源码。
 
 ## 4. 开发流程
 
@@ -227,7 +239,7 @@ std.debug.print("{s}", .{buf.written()});
 | php-parser 风格类型名                           | `src/compat.zig` `phpParserType` |
 | 覆盖矩阵用例（顺序同枚举）                      | `src/coverage.zig`               |
 | 单元测试（文件尾部）                            | 对应 `src/*.zig`                 |
-| golden（新语句族则扩 fixture）                  | `tests/golden/`                  |
+| golden（新语句族则扩 `tests/golden` 手写样例）   | `tests/golden/`                  |
 | 折叠决策                                        | `doc/zen.md` 特殊点表            |
 | 与 PHP-Parser 的差异                            | `doc/special.md`                 |
 
@@ -237,3 +249,22 @@ std.debug.print("{s}", .{buf.written()});
 - 测试只断言必要性质；断言值若来自特殊构成（"变量共 3 个：左值 + 2 处插值"），
   注释写明，避免后人误改。
 - 注释写"为什么"（取舍、隐含契约、踩过的坑），不写 What；仓库语言为中文。
+
+## 5. 许可证与出处
+
+`tests/golden/parser/**` 的 PHP 源码衍生自 PHP-Parser 的测试用例（BSD 3-Clause，
+Copyright (c) 2011, Nikita Popov）。该许可的三项义务落到本仓库：
+
+1. **保留声明**：源码或二进制再分发时必须保留版权声明、许可条件与免责声明——许可
+   全文见 `LICENSES/php-parser.txt`，出处声明见 `NOTICE.md`，两者随分发保留。
+2. **不背书**：不得以原作者或项目名义为本库背书，文档与发布说明只做客观出处标注。
+3. **不推广**：不得用作者名推广本库。
+
+对应到日常动作：
+
+- 新增或调整任何衍生自上游的内容（快照源码、整段引用的用例）时，同步更新 `NOTICE.md`
+  的涉及范围。
+- **不要**在生成的 `.php` 里加来源注释：那会改变解析输入、直接污染快照。出处集中在
+  `NOTICE.md` 与 `tests/golden/parser/README.md`。
+- 门禁白名单（`tools/known_diffs.txt`）的条目须写明成因与后续方向；修好后删除条目，并把
+  `baseline` 上调到新的全等段数——白名单只允许变短。

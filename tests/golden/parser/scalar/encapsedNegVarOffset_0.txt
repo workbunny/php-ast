@@ -1,0 +1,50 @@
+(root `<?php`
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_unary `-`
+          (expr_int `0`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_unary `-`
+          (expr_int `1`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_unary `-`
+          (expr_int `0x0`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_unary `-`
+          (expr_int `00`)
+        )
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_int `0`)
+      )
+    )
+  )
+)

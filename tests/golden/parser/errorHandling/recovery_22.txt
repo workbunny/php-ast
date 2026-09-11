@@ -1,0 +1,40 @@
+; 3 条诊断
+;   Syntax error, unexpected T_VARIABLE, expecting ',' or ']' or ')' from 3:18 to 3:34
+;   Syntax error, unexpected T_VARIABLE, expecting ',' or ']' or ')' from 6:12 to 6:28
+;   Syntax error, unexpected T_VARIABLE, expecting ',' or ']' or ')' from 9:21 to 9:37
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$array`)
+      (expr_array `[`
+        (expr_array_item `$this`
+          (expr_property_fetch `$this`
+            (expr_variable `$this`)
+            (name `value`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$array`)
+      (expr_array `[`
+        (expr_array_item `$value`
+          (expr_variable `$value`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$array`)
+      (expr_array `[`
+        (expr_array_item `$value`
+          (expr_variable `$value`)
+          (expr_string `'key'`)
+        )
+      )
+    )
+  )
+)

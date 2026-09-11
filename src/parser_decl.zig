@@ -16,6 +16,7 @@ const stmt = @import("parser_stmt.zig");
 const expr = @import("parser_expr.zig");
 const testing = @import("testing.zig");
 const types = @import("parser_type.zig");
+const reserved = @import("reserved.zig");
 
 /// 声明类节点（函数/类/属性/参数/属性组等）的附加负载组件，序列化进 extra_data。
 pub const AttributeComponents = struct {
@@ -123,6 +124,9 @@ pub const PropertyMods = struct {
     first_mod_token: TokenIndex = 0,
     /// `final` 修饰符 token（`final` 与 `abstract` 冲突时报错定位在此）。
     final_token: TokenIndex = 0,
+    /// 是否已出现 set 侧可见性修饰符（`private(set)`）。非对称可见性每个属性
+    /// 至多一个，重复即为 `Multiple access type modifiers are not allowed`。
+    set_seen: bool = false,
 };
 
 /// 类方法（Stmt\ClassMethod）：含可见性 / static / abstract / final / byRef 等修饰符。
@@ -175,10 +179,13 @@ pub fn parseFunction(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     var body: OptionalIndex = .none;
     if (p.tokTag() == .semicolon) {
         _ = p.nextToken();
-    } else {
+    } else if (p.tokTag() == .lbrace) {
         const b = (try stmt.parseBlock(p)) orelse return null;
         body = OptionalIndex.fromIndex(b);
     }
+    // 既非 `;` 亦非 `{`（`function foo(Bar)` 紧跟下一条语句）：函数体缺失。此处
+    // **不报诊断**，当前 token 留给外层当新语句起点——php-parser 在该状态只报参数
+    // 位错误，对缺体本身静默（recovery[21] 的 `function foo(Bar)` 后接 `class Bar`）。
     const extra = try p.addExtra(FunctionComponents{
         .name = name_tok,
         .attrs = attrs,
@@ -229,7 +236,9 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
     // 引用符号在前、变长省略号在后：`Type &...$x`（引用可变参数）。顺序不可调换——
     // 调换后 `&...` 的 `&` 会先被吃掉，剩余 `...` 在 variable 处误报 expected_variable。
     var by_ref = false;
+    var amp_tok: ?TokenIndex = null;
     if (p.tokTag() == .ampersand) {
+        amp_tok = p.tok_i;
         _ = p.nextToken();
         by_ref = true;
     }
@@ -239,7 +248,10 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
         variadic = true;
     }
     if (p.tokTag() != .variable) {
-        p.warn(ast.Error.Tag.expected_variable);
+        // 参数名位只接受变量本身（php-parser：`expecting T_VARIABLE`，不含 `$`/`{`）。
+        // `&` 已被消费而缺变量名（`function foo(&)`）时诊断落在 `&` 上——php-parser 报
+        // `unexpected T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG, expecting T_VARIABLE`。
+        p.warnAtExpected(ast.Error.Tag.expected_variable, amp_tok orelse p.tok_i, .variable);
         return null;
     }
     const var_tok = p.nextToken();
@@ -286,6 +298,11 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
 pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     const flags = parseModifiers(p);
     const kw = p.nextToken();
+    // 类名位只接受 T_STRING（php.y）：关键字（`class static {}`）是语法错，不产类节点。
+    if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+        p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
+        return null;
+    }
     const name_tok = p.nextToken();
     var extends: OptionalIndex = .none;
     if (p.tokTag() == .kw_extends) {
@@ -559,25 +576,40 @@ fn parsePropertyModifiers(p: *Parser) PropertyMods {
                     .kw_var => 0,
                     else => 0,
                 };
-                if (vis_count == 0) {
-                    res.visibility |= v;
+                const vtok = p.tok_i;
+                _ = p.nextToken();
+                if (p.tokTag() == .lparen) {
+                    // `vis(set)`：非对称可见性的 set 侧。首个可见性亦可带
+                    // （`private(set) $x`——此时无普通可见性侧）。
+                    const lp = p.tok_i;
                     _ = p.nextToken();
-                } else {
-                    // 第二及以后的可见性 token：仅紧接 `(set)` 的非对称可见性合法
-                    // （`public private(set)`）；其余为重复可见性（Multiple access
-                    // type modifiers）。
-                    const vtok = p.tok_i;
-                    _ = p.nextToken();
-                    if (p.tokTag() == .lparen) {
+                    if (p.isSoftKw("set")) {
                         _ = p.nextToken();
-                        if (p.isSoftKw("set")) _ = p.nextToken() else p.warn(ast.Error.Tag.expected_token);
-                        _ = p.eatToken(.rparen);
-                        // 非对称可见性：高字节写入 set 侧可见性（覆盖默认 3），
-                        // 使「无 set/有 set」可区分（读取时 set_vis != 3 即表示非对称）。
-                        res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
+                        const rp = p.eatToken(.rparen) orelse lp;
+                        if (res.set_seen) {
+                            // set 侧已出现过：`private(set) private(set)` /
+                            // `private(set) public(set)` 为重复修饰符，区间覆盖
+                            // 整个重复的修饰符（含 `(set)`）。
+                            p.addError(ast.Error.Tag.multiple_access_modifiers, vtok, rp, vtok, 0);
+                        } else {
+                            res.set_seen = true;
+                            // 高字节写入 set 侧可见性（默认 3 = 未指定），
+                            // 使「无 set/有 set」可区分（set_vis != 3 即非对称）。
+                            res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
+                        }
                     } else {
-                        p.warnAt(ast.Error.Tag.multiple_access_modifiers, vtok);
+                        // `(` 之后不是 `set`：是 DNF 类型 `(A&B)` 或语法错。回卷该
+                        // 可见性 token（连 `(`）交给类型解析；第二个可见性则本身
+                        // 即重复（`public int` 形态不在此列，vis_count 为 0）。
+                        p.tok_i = vtok;
+                        if (vis_count > 0) p.warnAt(ast.Error.Tag.multiple_access_modifiers, vtok);
+                        return res;
                     }
+                } else if (vis_count == 0) {
+                    res.visibility |= v;
+                } else {
+                    // 第二及以后的可见性 token 且后无 `(set)`：重复可见性。
+                    p.warnAt(ast.Error.Tag.multiple_access_modifiers, vtok);
                 }
                 vis_count += 1;
             },
@@ -668,8 +700,10 @@ pub fn parseProperty(p: *Parser, attrs: SubRange, mods: PropertyMods) ast.ParseE
         const sc = p.eatToken(.semicolon);
         if (sc) |x| {
             semi = x;
-        } else {
-            p.warnMissingSemi();
+        } else if (p.tokTag() != .close_tag) {
+            // 属性声明缺分号：php-parser 期望 `';' or '{'`——属性可带钩子块
+            // （`public $x { set ... }`），故 `{` 亦在期望集内（recovery[25] 首条）。
+            p.addErrorExpected(ast.Error.Tag.expected_semi, .semi_or_lbrace, p.tok_i, p.tok_i, p.tok_i, 0);
         }
     }
     const lr2 = try p.addNodeList(items.items);
@@ -856,8 +890,10 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
     }
     p.skipComments();
     const semi = (p.eatToken(.semicolon)) orelse blk: {
-        // 类常量以 `;` 收尾（PHP 硬性；recovery[25]：`const X = 1` 后直接类 `}` 缺分号）。
-        p.warnMissingSemi();
+        // 类常量以 `;` 收尾（PHP 硬性；recovery[25]：`const X = 1` 后直接类 `}` 缺分号，
+        // 期望集合只有 `';'`——常量声明不接块）。
+        if (p.tokTag() != .close_tag)
+            p.addErrorExpected(ast.Error.Tag.expected_semi, .semi, p.tok_i, p.tok_i, p.tok_i, 0);
         break :blk kw;
     };
     const lr = try p.addNodeList(decls.items);
@@ -883,6 +919,11 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
 /// 解析 interface / trait / enum 声明；enum 体内部特判为枚举项，其余走类成员。
 pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.ParseError!?Index {
     const kw = p.nextToken();
+    // 名字位只接受 T_STRING（同 parseClass）：`interface static {}` 是语法错。
+    if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+        p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
+        return null;
+    }
     const name_tok = p.nextToken();
     var backing: OptionalIndex = .none;
     if (tag == .stmt_enum and p.tokTag() == .colon) {
@@ -899,8 +940,9 @@ pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.Pa
             _ = p.nextToken();
             const n = (try expr.parseName(p)) orelse return null;
             try names.append(p.gpa, n);
-            while (p.tokTag() == .comma) {
-                _ = p.nextToken();
+            // `interface I extends J, {}`：列表不许尾逗号（结束定界符 `{`），报
+            // trailing_comma（recovery[17] 的 16:22）。
+            while (p.eatListComma(false, &.{.lbrace})) {
                 const more = (try expr.parseName(p)) orelse return null;
                 try names.append(p.gpa, more);
             }
@@ -1175,6 +1217,42 @@ test "decl :: A3 G5 声明族回归 :: 多属性/typed const/promotion 钩子/�
         .expr_arrow_function = 1,
         .attr_group = 3, // A1 A2 A3
     });
+}
+
+test "decl :: 声明名位关键字 :: 语法错且不产声明节点（readonly 版本敏感）" {
+    const gpa = std.testing.allocator;
+    // `class static {}` / `interface static {}`：名字位只接受 T_STRING，关键字即语法错
+    var a = try ast.Ast.parse(gpa, "<?php class static {}", testing.v84);
+    defer a.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), testing.countError(&a, .expected_token));
+    try testing.expectTagCounts(a, .{ .stmt_class = 0 });
+
+    var b = try ast.Ast.parse(gpa, "<?php interface static {}", testing.v84);
+    defer b.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), testing.countError(&b, .expected_token));
+    try testing.expectTagCounts(b, .{ .stmt_interface = 0 });
+
+    // `class ReadOnly {}`：大小写不敏感关键字，8.0 起语法错、7.4 合法
+    var c = try ast.Ast.parse(gpa, "<?php class ReadOnly {}", testing.v84);
+    defer c.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), testing.countError(&c, .expected_token));
+    try testing.expectTagCounts(c, .{ .stmt_class = 0 });
+
+    var d = try ast.Ast.parse(gpa, "<?php class ReadOnly {}", testing.v74);
+    defer d.deinit(gpa);
+    try testing.expectNoErrors(d);
+    try testing.expectTagCounts(d, .{ .stmt_class = 1 });
+
+    // `use C as static;`：别名位同规则，整条 use 不产节点
+    var e = try ast.Ast.parse(gpa, "<?php use C as static;", testing.v84);
+    defer e.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), testing.countError(&e, .expected_token));
+
+    // 半保留字（`self` 为 identifier）不在此列：仍产节点并交语义层报保留名
+    var f = try ast.Ast.parse(gpa, "<?php class self {}", testing.v84);
+    defer f.deinit(gpa);
+    try testing.expectNoErrors(f);
+    try testing.expectTagCounts(f, .{ .stmt_class = 1 });
 }
 
 test "decl :: 类 :: 继承与方法分别成节点" {

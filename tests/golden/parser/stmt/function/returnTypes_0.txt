@@ -1,0 +1,23 @@
+(root `<?php`
+  (stmt_function `function` name=`test1`
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test2`
+    (type_name `array`
+      (name `array`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test3`
+    (type_name `callable`
+      (name `callable`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test4`
+    (type_name `Foo`
+      (name `Foo\Bar`)
+    )
+    (stmt_block `{`)
+  )
+)

@@ -1,0 +1,7 @@
+(root `<?php`
+  (stmt_interface `interface` name=`A`
+    (name `C`)
+    (name `D`)
+    (stmt_method `function` name=`a`)
+  )
+)

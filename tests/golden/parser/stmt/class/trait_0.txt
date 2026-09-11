@@ -1,0 +1,35 @@
+(root `<?php`
+  (stmt_trait `trait` name=`A`
+    (stmt_method `function` name=`a`
+      (stmt_block `{`)
+    )
+  )
+  (stmt_class `class` name=`B`
+    (stmt_trait_use `use`
+      (name `C`)
+    )
+    (stmt_trait_use `use`
+      (name `D`)
+      (trait_use_adaptation_alias `a`)
+      (trait_use_adaptation_alias `c`)
+      (trait_use_adaptation_alias `e`)
+    )
+    (stmt_trait_use `use`
+      (name `E`)
+      (name `F`)
+      (name `G`)
+      (trait_use_adaptation_precedence `a`
+        (name `E`)
+      )
+      (trait_use_adaptation_alias `b`
+        (name `E`)
+      )
+      (trait_use_adaptation_alias `d`
+        (name `E`)
+      )
+      (trait_use_adaptation_alias `f`
+        (name `E`)
+      )
+    )
+  )
+)

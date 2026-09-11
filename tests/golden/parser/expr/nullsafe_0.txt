@@ -1,0 +1,38 @@
+(root `<?php`
+  (stmt_expression `$a`
+    (expr_nullsafe_property_fetch `$a`
+      (expr_variable `$a`)
+      (name `b`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_nullsafe_method_call `$a`
+      (expr_variable `$a`)
+      (expr_argument `$c`
+        (expr_variable `$c`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_nullsafe_property_fetch `$a`
+        (expr_variable `$a`)
+        (name `b`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_nullsafe_property_fetch `$a`
+        (expr_variable `$a`)
+        (name `b`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_variable `$a`)
+      (expr_string_part `?->b`)
+    )
+  )
+)

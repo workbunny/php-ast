@@ -1,0 +1,22 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$result`)
+      (expr_match `match`
+        (expr_variable `$operator`)
+        (expr_match_arm `BinaryOperator`
+          (expr_binary `+`
+            (expr_variable `$lhs`)
+            (expr_variable `$rhs`)
+          )
+          (expr_class_const_fetch `BinaryOperator`
+            (expr_const_fetch `BinaryOperator`
+              (name `BinaryOperator`)
+            )
+            (name `ADD`)
+          )
+        )
+      )
+    )
+  )
+)

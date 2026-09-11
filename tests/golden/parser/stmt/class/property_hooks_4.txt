@@ -1,0 +1,21 @@
+; 8 条诊断
+;   Cannot use the public modifier on a property hook from 4:9 to 4:14
+;   Multiple access type modifiers are not allowed from 4:16 to 4:21
+;   Cannot use the public modifier on a property hook from 4:16 to 4:21
+;   Cannot use the protected modifier on a property hook from 5:9 to 5:17
+;   Cannot use the private modifier on a property hook from 6:9 to 6:15
+;   Cannot use the abstract modifier on a property hook from 7:9 to 7:16
+;   Cannot use the static modifier on a property hook from 7:18 to 7:23
+;   Cannot use the readonly modifier on a property hook from 8:9 to 8:16
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+      (property_hook `get`)
+      (property_hook `get`)
+      (property_hook `get`)
+      (property_hook `get`)
+      (property_hook `get`)
+    )
+  )
+)

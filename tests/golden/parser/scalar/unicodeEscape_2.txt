@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Invalid UTF-8 codepoint escape sequence: Codepoint too large on line 2
+(root `<?php`
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\u{FFFFFFFFFFFFFFFF}`)
+    )
+  )
+)

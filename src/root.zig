@@ -59,6 +59,7 @@ test {
     _ = @import("parent_map.zig");
     _ = @import("semantic.zig");
     _ = @import("compat.zig");
+    _ = @import("reserved.zig");
     // 覆盖矩阵：编译期强制每个 Node.Tag 都有用例（新增节点忘补即编译失败）
     _ = @import("coverage.zig");
     _ = @import("dump.zig");

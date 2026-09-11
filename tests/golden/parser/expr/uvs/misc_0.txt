@@ -1,0 +1,64 @@
+(root `<?php`
+  (stmt_expression `"`
+    (expr_method_call `"`
+      (expr_property_fetch `"`
+        (expr_encapsed `"`
+          (expr_string_part `string`)
+        )
+        (name `length`)
+      )
+    )
+  )
+  (stmt_expression `"`
+    (expr_array_dim_fetch `"`
+      (expr_encapsed `"`
+        (expr_string_part `foo`)
+        (expr_variable `$bar`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_method_call `"`
+      (expr_property_fetch `"`
+        (expr_encapsed `"`
+          (expr_string_part `foo`)
+          (expr_variable `$bar`)
+        )
+        (name `length`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (expr_array_dim_fetch `clone`
+        (expr_property_fetch `clone`
+          (expr_clone `clone`
+            (expr_variable `$obj`)
+          )
+          (name `b`)
+        )
+        (expr_int `0`)
+      )
+      (expr_argument `1`
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array_dim_fetch `[`
+        (expr_array `[`
+          (expr_array_item `0`
+            (expr_int `0`)
+          )
+          (expr_array_item `1`
+            (expr_int `1`)
+          )
+        )
+        (expr_int `0`)
+      )
+      (expr_int `1`)
+    )
+  )
+)

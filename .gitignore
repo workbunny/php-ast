@@ -1,7 +1,8 @@
 # build artifacts
-# parity check reports (regenerable via `zig build check-parity`)
+# conformance 报告（可由 `zig build conformance` 重新生成；默认落 zig-out/）
 acceptance_report.txt
 diagnostic_report.txt
+zig-out/
 *.so
 *.dll
 *.exe

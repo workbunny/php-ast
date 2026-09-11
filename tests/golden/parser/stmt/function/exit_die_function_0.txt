@@ -1,0 +1,36 @@
+(root `<?php`
+  (stmt_function `function` name=`exit`
+    (param `$status`
+      (type_union `|`
+        (type_name `string`
+          (name `string`)
+        )
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (expr_int `0`)
+    )
+    (type_name `never`
+      (name `never`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`die`
+    (param `$status`
+      (type_union `|`
+        (type_name `string`
+          (name `string`)
+        )
+        (type_name `int`
+          (name `int`)
+        )
+      )
+      (expr_int `0`)
+    )
+    (type_name `never`
+      (name `never`)
+    )
+    (stmt_block `{`)
+  )
+)

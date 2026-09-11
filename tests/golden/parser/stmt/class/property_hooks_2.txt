@@ -1,0 +1,10 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+      (property_hook `get`
+        (expr_int `42`)
+      )
+    )
+  )
+)

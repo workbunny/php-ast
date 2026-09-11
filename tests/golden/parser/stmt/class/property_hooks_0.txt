@@ -1,0 +1,53 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+      (property_hook `get`
+        (stmt_block `{`
+          (stmt_return `return`
+            (expr_int `42`)
+          )
+        )
+      )
+      (property_hook `set`
+        (stmt_block `{`
+          (stmt_echo `echo`
+            (expr_variable `$value`)
+          )
+        )
+      )
+    )
+    (stmt_property `$prop2`
+      (property_item `$prop2`)
+      (property_hook `get`
+        (expr_int `42`)
+      )
+      (property_hook `set`
+        (expr_variable `$value`)
+      )
+    )
+    (stmt_property `$prop3`
+      (property_item `$prop3`)
+      (property_hook `get`)
+      (property_hook `set`)
+    )
+    (stmt_property `$prop4`
+      (property_item `$prop4`)
+      (property_hook `get`
+        (stmt_block `{`
+          (stmt_return `return`
+            (expr_int `42`)
+          )
+        )
+      )
+      (property_hook `set`
+        (stmt_block `{`)
+        (param `$value`
+          (type_name `string`
+            (name `string`)
+          )
+        )
+      )
+    )
+  )
+)

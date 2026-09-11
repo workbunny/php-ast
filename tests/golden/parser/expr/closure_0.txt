@@ -1,0 +1,51 @@
+(root `<?php`
+  (stmt_expression `function`
+    (expr_closure `function`
+      (param `$a`)
+      (stmt_block `{`
+        (stmt_expression `$a`
+          (expr_variable `$a`)
+        )
+      )
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (param `$a`)
+      (stmt_block `{`)
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (stmt_block `{`)
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (param `$a`)
+      (stmt_block `{`)
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (stmt_block `{`)
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (param `$a`)
+      (type_name `array`
+        (name `array`)
+      )
+      (stmt_block `{`)
+    )
+  )
+  (stmt_expression `function`
+    (expr_closure `function`
+      (type_name `\`
+        (name_fully_qualified `\Foo\Bar`)
+      )
+      (stmt_block `{`)
+    )
+  )
+)

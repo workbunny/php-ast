@@ -1,0 +1,49 @@
+(root `<?php`
+  (stmt_try `try`
+    (stmt_block `{`
+      (stmt_expression `doTry`
+        (expr_func_call `doTry`
+          (name `doTry`)
+        )
+      )
+    )
+    (stmt_catch `catch`
+      (name `A`)
+      (stmt_block `{`
+        (stmt_expression `doCatchA`
+          (expr_func_call `doCatchA`
+            (name `doCatchA`)
+          )
+        )
+      )
+    )
+    (stmt_catch `catch`
+      (name `B`)
+      (stmt_block `{`
+        (stmt_expression `doCatchB`
+          (expr_func_call `doCatchB`
+            (name `doCatchB`)
+          )
+        )
+      )
+    )
+    (stmt_block `{`
+      (stmt_expression `doFinally`
+        (expr_func_call `doFinally`
+          (name `doFinally`)
+        )
+      )
+    )
+  )
+  (stmt_try `try`
+    (stmt_block `{`)
+    (stmt_catch `catch`
+      (name `A`)
+      (stmt_block `{`)
+    )
+  )
+  (stmt_try `try`
+    (stmt_block `{`)
+    (stmt_block `{`)
+  )
+)

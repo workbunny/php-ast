@@ -1,0 +1,13 @@
+(root `<?php`
+  (stmt_expression `$a`
+    (expr_variable `$a`)
+  )
+  (inline_html `\nB\n`)
+  (stmt_expression `$c`
+    (expr_variable `$c`)
+  )
+  (inline_html `\n`)
+  (stmt_expression `$d`
+    (expr_variable `$d`)
+  )
+)

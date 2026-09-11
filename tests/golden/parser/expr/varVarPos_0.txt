@@ -1,0 +1,9 @@
+(root `<?php`
+  (stmt_expression `$`
+    (expr_variable_ref `$`
+      (expr_variable_ref `$`
+        (expr_variable `$x`)
+      )
+    )
+  )
+)

@@ -1,0 +1,11 @@
+(root `<?php`
+  (stmt_try `try`
+    (stmt_block `{`
+      (stmt_expression `foo`
+        (expr_func_call `foo`
+          (name `foo`)
+        )
+      )
+    )
+  )
+)

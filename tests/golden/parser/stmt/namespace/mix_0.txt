@@ -1,0 +1,17 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `A`)
+    (stmt_echo `echo`
+      (expr_int `1`)
+    )
+    (stmt_namespace `namespace`
+      (name `B`)
+      (stmt_echo `echo`
+        (expr_int `2`)
+      )
+    )
+    (stmt_echo `echo`
+      (expr_int `3`)
+    )
+  )
+)

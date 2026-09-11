@@ -1,0 +1,18 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$value`)
+      (expr_match `match`
+        (expr_int `1`)
+        (expr_match_arm `0`
+          (expr_string `'Foo'`)
+          (expr_int `0`)
+          (expr_int `1`)
+        )
+        (expr_match_arm `'Bar'`
+          (expr_string `'Bar'`)
+        )
+      )
+    )
+  )
+)

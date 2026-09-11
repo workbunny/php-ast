@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$foo`)
+      (expr_variable `$bar`)
+    )
+  )
+)

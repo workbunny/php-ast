@@ -1,0 +1,18 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `A`)
+  )
+  (stmt_declare `declare`
+    (declare_declare `ticks`
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `foo`
+    (expr_func_call `foo`
+      (name `foo`)
+    )
+  )
+  (stmt_namespace `namespace`
+    (name `B`)
+  )
+)

@@ -1,0 +1,9 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `A`)
+    (stmt_expression `$a`
+      (expr_variable `$a`)
+    )
+    (stmt_halt `__halt_compiler`)
+  )
+)

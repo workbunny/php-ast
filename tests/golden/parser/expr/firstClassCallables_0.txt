@@ -1,0 +1,45 @@
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_first_class_callable `foo`
+      (name `foo`)
+    )
+  )
+  (stmt_expression `$this`
+    (expr_method_call `$this`
+      (expr_property_fetch `$this`
+        (expr_variable `$this`)
+        (name `foo`)
+      )
+      (expr_variadic_placeholder `...`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_call `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (expr_variadic_placeholder `...`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `Foo`)
+      (expr_variadic_placeholder `...`)
+    )
+  )
+  (stmt_expression `$this`
+    (expr_nullsafe_method_call `$this`
+      (expr_variable `$this`)
+      (expr_variadic_placeholder `...`)
+    )
+  )
+  (stmt_function `function` name=`foo`
+    (attr_group `#`
+      (attribute `Foo`
+        (name `Foo`)
+        (expr_variadic_placeholder `...`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Syntax error, unexpected EOF from 3:1 to 3:1
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `T`)
+    )
+  )
+)

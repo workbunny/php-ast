@@ -1,0 +1,13 @@
+; 2 条诊断
+;   Multiple access type modifiers are not allowed from 3:18 to 3:29
+;   Multiple access type modifiers are not allowed from 4:18 to 4:28
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$x`
+      (property_item `$x`)
+    )
+    (stmt_property `$x`
+      (property_item `$x`)
+    )
+  )
+)

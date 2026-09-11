@@ -1,0 +1,35 @@
+; 2 条诊断
+;   Syntax error, unexpected T_PUBLIC, expecting ';' or '{' from 6:5 to 6:10
+;   Syntax error, unexpected '}', expecting ';' from 12:1 to 12:1
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_property `$foo`
+      (property_item `$foo`)
+    )
+    (stmt_method `function` name=`__construct`
+      (param `$s`
+        (type_name `string`
+          (name `string`)
+        )
+      )
+      (stmt_block `{`
+        (stmt_expression `=`
+          (expr_assign `=`
+            (expr_property_fetch `$this`
+              (expr_variable `$this`)
+              (name `foo`)
+            )
+            (expr_variable `$s`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_class `class` name=`B`
+    (stmt_class_const `const` name=`X`
+      (const_decl `X`
+        (expr_int `1`)
+      )
+    )
+  )
+)

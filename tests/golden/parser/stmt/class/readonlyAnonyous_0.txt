@@ -1,0 +1,7 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (stmt_class `class` name=`<?php`)
+    )
+  )
+)

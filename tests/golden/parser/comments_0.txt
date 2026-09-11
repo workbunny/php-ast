@@ -1,0 +1,12 @@
+(root `<?php`
+  (stmt_expression `$var`
+    (expr_variable `$var`)
+  )
+  (stmt_if `if`
+    (expr_variable `$cond`)
+    (stmt_block `{`
+      (stmt_nop `/** doc 2 */`)
+    )
+  )
+  (stmt_nop `/** doc 3 */`)
+)

@@ -1,0 +1,29 @@
+; 1 条诊断
+;   Syntax error, unexpected EOF from 9:1 to 9:1
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_int `0`)
+    )
+  )
+  (stmt_while `while`
+    (expr_const_fetch `true`
+      (name `true`)
+    )
+    (stmt_block `{`
+      (stmt_expression `=`
+        (expr_assign `=`
+          (expr_variable `$i`)
+          (expr_int `1`)
+        )
+      )
+      (stmt_expression `=`
+        (expr_assign `=`
+          (expr_variable `$i`)
+          (expr_int `2`)
+        )
+      )
+    )
+  )
+)

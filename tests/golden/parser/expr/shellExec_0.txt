@@ -1,0 +1,26 @@
+(root `<?php`
+  (stmt_expression ```
+    (expr_shell_exec ```)
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `test`)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `test `)
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `test \``)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `test \"`)
+    )
+  )
+)

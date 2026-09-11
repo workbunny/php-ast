@@ -1,0 +1,11 @@
+(root `<?php`
+  (stmt_echo `echo`
+    (expr_string `'Hallo World!'`)
+  )
+  (stmt_echo `echo`
+    (expr_string `'Hallo'`)
+    (expr_string `' '`)
+    (expr_string `'World'`)
+    (expr_string `'!'`)
+  )
+)

@@ -1,0 +1,50 @@
+(root `<?php`
+  (stmt_use `use`
+    (use_use `A`
+      (name `A\B`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `C`
+      (name `C\D`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `F`
+      (name `F\G`)
+    )
+    (use_use `J`
+      (name `J`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `\`
+      (name_fully_qualified `\A`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `\`
+      (name_fully_qualified `\A`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `foo`
+      (name `foo\bar`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `foo`
+      (name `foo\bar`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `foo`
+      (name `foo\BAR`)
+    )
+  )
+  (stmt_use `use`
+    (use_use `foo`
+      (name `foo\BAR`)
+    )
+  )
+)

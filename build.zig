@@ -43,24 +43,41 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "运行 php-ast 单元测试");
     test_step.dependOn(&run_tests.step);
 
-    // 一致性对照工具（tools/parity_check.zig）：以 php-parser 测试子集为基准度量
-    // 本库接受面与诊断质量，产出 acceptance_report.txt 与 diagnostic_report.txt。
-    // 可执行（非 test）以支持命令行参数：`zig build check-parity -- <基准目录>`
-    // 用指定目录作基准并把报告写到该目录；无参数用库内 tests/third_party 基准、
-    // 报告写到仓库根。库经 `ast` 模块暴露给工具（addExecutable 无 `../` 越界限制）。
-    const parity_exe = b.addExecutable(.{
-        .name = "parity_check",
+    // 符合性对照工具（tools/conformance.zig）：以 PHP-Parser 的测试用例为 oracle
+    // 度量本库接受面与诊断质量，并做防回归门禁（白名单 + 基线）。参照路径由命令行
+    // 给出：`zig build conformance -- --php-parser <路径>`；未给路径时工具直接成功
+    // 退出——PHP-Parser 是开发期参照，不是构建依赖。库经 `ast` 模块暴露给工具。
+    const conformance_exe = b.addExecutable(.{
+        .name = "conformance",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/parity_check.zig"),
+            .root_source_file = b.path("tools/conformance.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{ .{ .name = "ast", .module = lib_mod } },
         }),
     });
-    const run_parity = b.addRunArtifact(parity_exe);
+    const run_conformance = b.addRunArtifact(conformance_exe);
     if (b.args) |args| {
-        for (args) |a| run_parity.addArg(a);
+        for (args) |a| run_conformance.addArg(a);
     }
-    const parity_step = b.step("check-parity", "与 php-parser 测试子集做一致性对照（接受面 + 诊断质量）");
-    parity_step.dependOn(&run_parity.step);
+    const conformance_step = b.step("conformance", "与 PHP-Parser 对照：接受面 + 诊断质量（报告 + 门禁）");
+    conformance_step.dependOn(&run_conformance.step);
+
+    // 快照迁移工具（tools/golden_gen.zig）：把 PHP-Parser 测试用例的代码段导出为
+    // `tests/golden/parser/**/*.php`，再由 `zig build test -Dupdate-golden` 生成
+    // 同名 `*.txt`。只搬源码，不依赖库代码（故无模块导入）。
+    const golden_gen_exe = b.addExecutable(.{
+        .name = "golden_gen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/golden_gen.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_golden_gen = b.addRunArtifact(golden_gen_exe);
+    if (b.args) |args| {
+        for (args) |a| run_golden_gen.addArg(a);
+    }
+    const golden_gen_step = b.step("golden-gen", "从 PHP-Parser 测试用例迁移快照源码到 tests/golden/parser");
+    golden_gen_step.dependOn(&run_golden_gen.step);
 }

@@ -1,0 +1,60 @@
+(root `<?php`
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (expr_variable `$c`)
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (expr_variable `$c`)
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_list `list`
+      (expr_array_item `$a`
+        (expr_variable `$a`)
+      )
+      (expr_array_item `$b`
+        (expr_variable `$b`)
+      )
+    )
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$a`)
+    (expr_list `list`
+      (expr_array_item `$b`
+        (expr_variable `$b`)
+      )
+      (expr_array_hole `,`)
+      (expr_array_item `$c`
+        (expr_variable `$c`)
+      )
+    )
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_array `array`)
+    (expr_variable `$b`)
+    (stmt_block `{`)
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (stmt_block `:`)
+  )
+)

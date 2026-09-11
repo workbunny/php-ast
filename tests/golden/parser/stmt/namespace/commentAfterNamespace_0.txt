@@ -1,0 +1,6 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `Foo`)
+  )
+  (stmt_nop `// Comment`)
+)

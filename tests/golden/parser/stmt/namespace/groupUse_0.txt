@@ -1,0 +1,56 @@
+(root `<?php`
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `B`
+      (name `B`)
+    )
+  )
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `B`
+      (name `B\C`)
+    )
+    (use_use `D`
+      (name `D`)
+    )
+  )
+  (stmt_group_use `use`
+    (name_fully_qualified `\A\B`)
+    (use_use `C`
+      (name `C\D`)
+    )
+    (use_use `E`
+      (name `E`)
+    )
+  )
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `b`
+      (name `b\c`)
+    )
+    (use_use `d`
+      (name `d`)
+    )
+  )
+  (stmt_group_use `use`
+    (name_fully_qualified `\A`)
+    (use_use `B`
+      (name `B\C`)
+    )
+    (use_use `D`
+      (name `D`)
+    )
+  )
+  (stmt_group_use `use`
+    (name `A\B`)
+    (use_use `C`
+      (name `C\D`)
+    )
+    (use_use `b`
+      (name `b\c`)
+    )
+    (use_use `D`
+      (name `D`)
+    )
+  )
+)

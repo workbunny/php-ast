@@ -1,0 +1,11 @@
+(root `<?php`
+  (stmt_declare `declare`
+    (declare_declare `A`
+      (expr_string `'B'`)
+    )
+  )
+  (stmt_namespace `namespace`
+    (name `B`)
+  )
+  (stmt_halt `__halt_compiler`)
+)

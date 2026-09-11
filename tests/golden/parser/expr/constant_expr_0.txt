@@ -1,0 +1,328 @@
+(root `<?php`
+  (stmt_const `const`
+    (const_decl `T_1`
+      (expr_binary `<<`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_2`
+      (expr_binary `/`
+        (expr_int `1`)
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_3`
+      (expr_binary `+`
+        (expr_float `1.5`)
+        (expr_float `1.5`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_4`
+      (expr_binary `.`
+        (expr_encapsed `"`
+          (expr_string_part `foo`)
+        )
+        (expr_encapsed `"`
+          (expr_string_part `bar`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_5`
+      (expr_binary `*`
+        (expr_binary `+`
+          (expr_float `1.5`)
+          (expr_float `1.5`)
+        )
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_6`
+      (expr_binary `.`
+        (expr_binary `.`
+          (expr_binary `.`
+            (expr_encapsed `"`
+              (expr_string_part `foo`)
+            )
+            (expr_int `2`)
+          )
+          (expr_int `3`)
+        )
+        (expr_float `4.0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_7`
+      (expr_magic_const `__LINE__`)
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_8`
+      (expr_encapsed `<<<`
+        (expr_string_part `This is a test string\n`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_9`
+      (expr_unary `~`
+        (expr_unary `-`
+          (expr_int `1`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_10`
+      (expr_binary `+`
+        (expr_unary `-`
+          (expr_ternary `1`
+            (expr_int `1`)
+            (expr_int `1`)
+          )
+        )
+        (expr_ternary `0`
+          (expr_int `0`)
+          (expr_int `2`)
+          (expr_int `3`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_11`
+      (expr_binary `&&`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_12`
+      (expr_binary `and`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_13`
+      (expr_binary `||`
+        (expr_int `0`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_14`
+      (expr_binary `or`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_15`
+      (expr_binary `xor`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_16`
+      (expr_binary `xor`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_17`
+      (expr_binary `<`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_18`
+      (expr_binary `<=`
+        (expr_int `0`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_19`
+      (expr_binary `>`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_20`
+      (expr_binary `>=`
+        (expr_int `1`)
+        (expr_int `0`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_21`
+      (expr_binary `===`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_22`
+      (expr_binary `!==`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_23`
+      (expr_binary `!=`
+        (expr_int `0`)
+        (expr_encapsed `"`
+          (expr_string_part `0`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_24`
+      (expr_binary `==`
+        (expr_int `1`)
+        (expr_encapsed `"`
+          (expr_string_part `1`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_25`
+      (expr_binary `+`
+        (expr_int `1`)
+        (expr_binary `*`
+          (expr_int `2`)
+          (expr_int `3`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_26`
+      (expr_binary `+`
+        (expr_binary `+`
+          (expr_encapsed `"`
+            (expr_string_part `1`)
+          )
+          (expr_int `2`)
+        )
+        (expr_encapsed `"`
+          (expr_string_part `3`)
+        )
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_27`
+      (expr_binary `**`
+        (expr_int `2`)
+        (expr_int `3`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_28`
+      (expr_array_dim_fetch `[`
+        (expr_array `[`
+          (expr_array_item `1`
+            (expr_int `1`)
+          )
+          (expr_array_item `2`
+            (expr_int `2`)
+          )
+          (expr_array_item `3`
+            (expr_int `3`)
+          )
+        )
+        (expr_int `1`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_29`
+      (expr_binary `-`
+        (expr_int `12`)
+        (expr_int `13`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_30`
+      (expr_binary `^`
+        (expr_int `12`)
+        (expr_int `13`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_31`
+      (expr_binary `&`
+        (expr_int `12`)
+        (expr_int `13`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_32`
+      (expr_binary `|`
+        (expr_int `12`)
+        (expr_int `13`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_33`
+      (expr_binary `%`
+        (expr_int `12`)
+        (expr_int `3`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_34`
+      (expr_binary `>>`
+        (expr_int `100`)
+        (expr_int `4`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (const_decl `T_35`
+      (expr_unary `!`
+        (expr_const_fetch `false`
+          (name `false`)
+        )
+      )
+    )
+  )
+)

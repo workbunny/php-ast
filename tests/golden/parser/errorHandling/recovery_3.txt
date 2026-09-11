@@ -1,0 +1,10 @@
+; 1 条诊断
+;   Syntax error, unexpected ';' from 3:5 to 3:5
+(root `<?php`
+  (stmt_expression `abc`
+    (expr_const_fetch `abc`
+      (name `abc`)
+    )
+  )
+  (stmt_error `1`)
+)

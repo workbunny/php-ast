@@ -1,0 +1,5 @@
+(root `<?php`
+  (stmt_block `{`
+    (stmt_nop `/* comment */`)
+  )
+)

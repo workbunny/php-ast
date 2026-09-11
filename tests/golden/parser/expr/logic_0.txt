@@ -1,0 +1,86 @@
+(root `<?php`
+  (stmt_expression `&&`
+    (expr_binary `&&`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `||`
+    (expr_binary `||`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `!`
+    (expr_unary `!`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `!`
+    (expr_unary `!`
+      (expr_unary `!`
+        (expr_variable `$a`)
+      )
+    )
+  )
+  (stmt_expression `and`
+    (expr_binary `and`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `or`
+    (expr_binary `or`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `xor`
+    (expr_binary `xor`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `||`
+    (expr_binary `||`
+      (expr_binary `&&`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+      (expr_binary `&&`
+        (expr_variable `$c`)
+        (expr_variable `$d`)
+      )
+    )
+  )
+  (stmt_expression `&&`
+    (expr_binary `&&`
+      (expr_binary `&&`
+        (expr_variable `$a`)
+        (expr_binary `||`
+          (expr_variable `$b`)
+          (expr_variable `$c`)
+        )
+      )
+      (expr_variable `$d`)
+    )
+  )
+  (stmt_expression `||`
+    (expr_binary `||`
+      (expr_assign `=`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+      (expr_variable `$c`)
+    )
+  )
+  (stmt_expression `or`
+    (expr_binary `or`
+      (expr_assign `=`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+      (expr_variable `$c`)
+    )
+  )
+)

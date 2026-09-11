@@ -1,0 +1,61 @@
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_func_call `foo`
+      (name `foo`)
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `$foo`
+    (expr_method_call `$foo`
+      (expr_property_fetch `$foo`
+        (expr_variable `$foo`)
+        (name `bar`)
+      )
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `Foo`
+    (expr_static_call `Foo`
+      (expr_const_fetch `Foo`
+        (name `Foo`)
+      )
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `Foo`)
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_unset `unset`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+)

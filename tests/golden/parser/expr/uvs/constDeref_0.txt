@@ -1,0 +1,148 @@
+(root `<?php`
+  (stmt_expression `A`
+    (expr_property_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name `length`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_method_call `A`
+      (expr_property_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `length`)
+      )
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_array_dim_fetch `A`
+        (expr_array_dim_fetch `A`
+          (expr_const_fetch `A`
+            (name `A`)
+          )
+          (expr_int `0`)
+        )
+        (expr_int `1`)
+      )
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_array_dim_fetch `A`
+      (expr_array_dim_fetch `A`
+        (expr_array_dim_fetch `A`
+          (expr_class_const_fetch `A`
+            (expr_const_fetch `A`
+              (name `A`)
+            )
+            (name `B`)
+          )
+          (expr_int `0`)
+        )
+        (expr_int `1`)
+      )
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_property_fetch `A`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+      (name `length`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_method_call `A`
+      (expr_property_fetch `A`
+        (expr_class_const_fetch `A`
+          (expr_const_fetch `A`
+            (name `A`)
+          )
+          (name `B`)
+        )
+        (name `length`)
+      )
+    )
+  )
+  (stmt_expression `A`
+    (expr_class_const_fetch `A`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+      (name `C`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_property_fetch `A`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+      (name_var_like `$c`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_static_call `A`
+      (expr_class_const_fetch `A`
+        (expr_const_fetch `A`
+          (name `A`)
+        )
+        (name `B`)
+      )
+    )
+  )
+  (stmt_expression `__FUNCTION__`
+    (expr_array_dim_fetch `__FUNCTION__`
+      (expr_magic_const `__FUNCTION__`)
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `__FUNCTION__`
+    (expr_property_fetch `__FUNCTION__`
+      (expr_magic_const `__FUNCTION__`)
+      (name `length`)
+    )
+  )
+  (stmt_expression `__FUNCIONT__`
+    (expr_method_call `__FUNCIONT__`
+      (expr_property_fetch `__FUNCIONT__`
+        (expr_const_fetch `__FUNCIONT__`
+          (name `__FUNCIONT__`)
+        )
+        (name `length`)
+      )
+    )
+  )
+)

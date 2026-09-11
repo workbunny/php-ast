@@ -1,0 +1,53 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (name_var_like `$className`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_array_dim_fetch `$array`
+        (expr_variable `$array`)
+        (expr_string `'className'`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_property_fetch `$obj`
+        (expr_variable `$obj`)
+        (name `className`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_static_property_fetch `Test`
+        (name `Test`)
+        (name_var_like `$className`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_static_property_fetch `$test`
+        (expr_variable `$test`)
+        (name_var_like `$className`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_static_property_fetch `$weird`
+        (expr_property_fetch `$weird`
+          (expr_array_dim_fetch `$weird`
+            (expr_variable `$weird`)
+            (expr_int `0`)
+          )
+          (name `foo`)
+        )
+        (name_var_like `$className`)
+      )
+    )
+  )
+)

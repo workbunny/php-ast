@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Multiple static modifiers are not allowed from 1:24 to 1:29
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_property `$a`
+      (property_item `$a`)
+    )
+  )
+)

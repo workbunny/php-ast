@@ -1,0 +1,41 @@
+(root `<?php`
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+      (expr_variable `$c`)
+    )
+  )
+  (stmt_expression `empty`
+    (expr_empty `empty`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `empty`
+    (expr_empty `empty`
+      (expr_func_call `foo`
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_expression `empty`
+    (expr_empty `empty`
+      (expr_array `array`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+        (expr_array_item `2`
+          (expr_int `2`)
+        )
+        (expr_array_item `3`
+          (expr_int `3`)
+        )
+      )
+    )
+  )
+)

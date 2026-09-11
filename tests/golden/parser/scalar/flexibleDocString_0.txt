@@ -1,0 +1,136 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$ary`)
+      (expr_array `[`
+        (expr_array_item `<<<`
+          (expr_encapsed `<<<`
+            (expr_string_part `Test\n`)
+          )
+        )
+        (expr_array_item `<<<`
+          (expr_encapsed `<<<`
+            (expr_string_part `    Test\n    `)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`)
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\n  `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` \n  `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `     a\n    b\n\n   c\n\n  d\n e\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\t    a\n\t   b\n\t  `)
+      (expr_variable `$test`)
+      (expr_string_part `\n\t d\n\te\n\t`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\n    a\n\n   b\n\n  c\n\n d\n\ne\n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\ta\r\n\n\ta\n\n   b\r\n\n  `)
+      (expr_variable `$test`)
+      (expr_string_part `\n\n d\r\n\ne\n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$one`)
+      (expr_string_part `-\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$two`)
+      (expr_string_part ` -\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$three`)
+      (expr_string_part `\t-\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$four`)
+      (expr_string_part `-`)
+      (expr_variable `$four`)
+      (expr_string_part `\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$five`)
+      (expr_string_part `-`)
+      (expr_variable `$five`)
+      (expr_string_part `-\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$six`)
+      (expr_string_part `-`)
+      (expr_variable `$six`)
+      (expr_string_part `-`)
+      (expr_variable `$six`)
+      (expr_string_part `\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$seven`)
+      (expr_string_part `\n -\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` `)
+      (expr_variable `$eight`)
+      (expr_string_part `\n  -\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_variable `$nine`)
+      (expr_string_part `\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part ` -\n `)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `  -\n `)
+    )
+  )
+)

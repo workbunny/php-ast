@@ -13,6 +13,7 @@ const TokenIndex = ast.TokenIndex;
 const PhpVersion = @import("version.zig").PhpVersion;
 
 const decl = @import("parser_decl.zig");
+const reserved = @import("reserved.zig");
 const expr = @import("parser_expr.zig");
 const testing = @import("testing.zig");
 
@@ -331,6 +332,7 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
 /// 分号存入 `node_and_token`，使语句的 token 区间完整（否则代码改写会漏掉分号）。
 /// 末尾无分号时（如文件尾）退化为用主 token 占位。
 pub fn parseExprStatement(p: *Parser) ast.ParseError!?Index {
+    const errs_before = p.errors.items.len;
     const e = try expr.parseExpr(p);
     if (e == null) return null;
     const ex = e.?;
@@ -343,6 +345,10 @@ pub fn parseExprStatement(p: *Parser) ast.ParseError!?Index {
     // 分号位置用主 token 兜底。
     p.skipComments();
     const semi = (p.eatToken(.semicolon)) orelse blk: {
+        // 本语句已在解析阶段报过错（`Bar::)` 的成员名残缺、`[$a b]` 的列表残缺）
+        // 时不再补报分号缺失：php-parser 进入恢复状态即停，否则同一 token 会被
+        // 报成两条（recovery[18] / recovery[24]）。
+        if (p.errors.items.len != errs_before) break :blk main;
         p.warnMissingSemi();
         p.skipToStmtSync(true);
         break :blk main;
@@ -477,7 +483,13 @@ fn parseIfAltBody(p: *Parser) ast.ParseError!?Index {
 /// while 循环：`while (cond) body`。
 pub fn parseWhile(p: *Parser) ast.ParseError!?Index {
     const kw = p.nextToken();
-    _ = p.expectToken(.lparen);
+    if (p.eatToken(.lparen) == null) {
+        // `while` 后必须有 `(`；缺失即报并放弃该语句（php-parser 报
+        // `unexpected T_VARIABLE, expecting '('`，不继续解析条件与循环体，
+        // 故不会连锁多报——recovery[5]）。
+        p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .lparen);
+        return null;
+    }
     const cond = (try expr.parseExpr(p)) orelse return null;
     _ = p.expectToken(.rparen);
     const body = (try parseBody(p, .kw_endwhile)) orelse return null;
@@ -974,12 +986,19 @@ pub fn parseUse(p: *Parser) ast.ParseError!?Index {
                 _ = p.nextToken();
             }
             // 组内项不允许完全限定名（`use A\B\{\C}` 的 `\C` 前导 `\` 非法；
-            // php-parser 报 unexpected T_NAME_FULLY_QUALIFIED）。
+            // php-parser 报 `unexpected T_NAME_FULLY_QUALIFIED, expecting T_STRING
+            // or T_FUNCTION or T_CONST or T_NAME_QUALIFIED`）。`\C` 在 php-parser
+            // 是单个 token，故诊断区间覆盖整名（`\` + 各名字段）。
             if (p.tokTag() == .backslash) {
-                p.warnAt(ast.Error.Tag.expected_token, p.tok_i);
+                const start = p.tok_i;
+                var end = start;
+                var k = start;
+                const tags = p.tokens.items(.tag);
+                while (k < tags.len and (tags[k] == .backslash or tags[k] == .identifier)) : (k += 1) end = k;
+                p.addErrorExpected(ast.Error.Tag.expected_token, .use_name, start, end, start, 0);
             }
             const name = (try expr.parseName(p)) orelse break;
-            const u = try buildUseUse(p, name, item_kind);
+            const u = (try buildUseUse(p, name, item_kind)) orelse return null;
             try uses.append(p.gpa, u);
             // 组 use `use A\{B, }`：PHP **允许**尾逗号（与顶层 use 列表不同）
             if (p.eatListComma(true, &.{})) continue;
@@ -989,8 +1008,10 @@ pub fn parseUse(p: *Parser) ast.ParseError!?Index {
         p.skipComments();
         const semi = (p.eatToken(.semicolon)) orelse blk: {
             // use 声明以 `;` 收尾（PHP 硬性，`?>` 前可省）；缺分号时下一个 token
-            // 留给外层循环当新语句起点（错误恢复，php-parser 同法）。
-            p.warnMissingSemi();
+            // 留给外层循环当新语句起点（错误恢复，php-parser 同法）。组 use 已用掉
+            // `{`，期望集合只剩 `';'`（groupUseErrors[0]）。
+            if (p.tokTag() != .close_tag)
+                p.addErrorExpected(ast.Error.Tag.expected_semi, .semi, p.tok_i, p.tok_i, p.tok_i, 0);
             break :blk rbrace;
         };
         const lr = try p.addNodeList(uses.items);
@@ -1008,17 +1029,31 @@ pub fn parseUse(p: *Parser) ast.ParseError!?Index {
     // 普通（非分组）use：first 即首个 use use，其后可跟逗号列表。
     var uses = try std.ArrayList(Index).initCapacity(p.gpa, 0);
     defer uses.deinit(p.gpa);
-    try uses.append(p.gpa, try buildUseUse(p, first, kind));
+    try uses.append(p.gpa, (try buildUseUse(p, first, kind)) orelse return null);
     // `use A, ;`：PHP 不允许尾逗号（结束定界符 `;`）
     while (p.eatListComma(false, &.{.semicolon})) {
         const name = (try expr.parseName(p)) orelse break;
-        try uses.append(p.gpa, try buildUseUse(p, name, kind));
+        try uses.append(p.gpa, (try buildUseUse(p, name, kind)) orelse return null);
     }
     p.skipComments();
     const semi = (p.eatToken(.semicolon)) orelse blk: {
-        // use 声明以 `;` 收尾（`?>` 前可省）；缺分号（`use Foo {Bar}` 的 `{`、
-        // 下一条 use 等）报 expected_semi，token 留给外层恢复。
-        p.warnMissingSemi();
+        // use 声明以 `;` 收尾（`?>` 前可省）；缺分号时 token 留给外层恢复。
+        // 期望集合按当前 token 取（php-parser 的 LALR 状态差异）：
+        //   - 遇 `{`（`use Foo {Bar, Baz}`）→ 只有 `';'`（组 use 的 `{` 必须紧跟
+        //     在 `\` 之后，此处不可能合法，故不入期望集；groupUseErrors[1]）；该
+        //     `{...}` 整体跳过，避免逐 token 连锁多报 `,`/`}`/EOF。
+        //   - 遇下一条语句（`use A` 后跟 `use B`）→ `';' or '{'`。
+        if (p.tokTag() != .close_tag) {
+            if (p.tokTag() == .lbrace) {
+                // 期望集只剩 `';'`（组 use 的 `{` 必须紧跟 `\`，此处不可能合法）。
+                // `{...}` 按配对整体跳过：逐 token 解析会连锁多报 `,`/`}`/EOF；
+                // 跳过中消费到的 `;` 即本声明的收尾符。
+                p.addErrorExpected(ast.Error.Tag.expected_semi, .semi, p.tok_i, p.tok_i, p.tok_i, 0);
+                if (p.skipBalancedTo(.semicolon, true)) |semi_tok| break :blk semi_tok;
+            } else {
+                p.addErrorExpected(ast.Error.Tag.expected_semi, .semi_or_lbrace, p.tok_i, p.tok_i, p.tok_i, 0);
+            }
+        }
         break :blk kw;
     };
     const lr = try p.addNodeList(uses.items);
@@ -1035,10 +1070,16 @@ pub fn parseUse(p: *Parser) ast.ParseError!?Index {
 }
 
 /// 由已解析的 name 构造一个 use_use 节点（处理可选的 `as 别名`）。
-fn buildUseUse(p: *Parser, name: Index, kind: u32) !Index {
+/// 别名为禁用关键字（`use C as static;`）时返回 null：php.y 该位只接受
+/// `T_STRING`，属语法错且不产出 use 声明节点。
+fn buildUseUse(p: *Parser, name: Index, kind: u32) !?Index {
     var alias: TokenIndex = 0;
     if (p.tokTag() == .kw_as) {
         _ = p.nextToken();
+        if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+            p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
+            return null;
+        }
         alias = p.nextToken();
     }
     const extra = try p.addExtra(UseUseComponents{ .alias = alias, .kind = kind });
@@ -1093,6 +1134,11 @@ fn parseTraitAdaptation(p: *Parser) ast.ParseError!?Index {
     var method: TokenIndex = 0;
     skipComments(p);
     if (p.tokTag() == .rbrace or p.tokTag() == .eof) return null;
+    // php 模式标记切换（`x as y?><?= ...`）：`?>` 是模式切换而非名字，跳过；
+    // 紧随的 `<?=` 落在标识符位时报专用消息，并**照常作为标识符**参与解析
+    // （php-parser 保留 Identifier(<?=)，消息为 `Cannot use "<?=" as an identifier`）。
+    while (p.tokTag() == .close_tag) _ = p.nextToken();
+    if (p.isShortEchoTag()) p.warn(ast.Error.Tag.short_echo_identifier);
     // A::foo
     const maybe_trait = (try expr.parseName(p)) orelse return null;
     if (p.tokTag() == .double_colon) {
@@ -1248,7 +1294,18 @@ pub fn parseGlobal(p: *Parser) ast.ParseError!?Index {
         if (p.eatListComma(false, &.{.semicolon})) continue;
         break;
     }
-    const semi = (p.eatToken(.semicolon)) orelse kw;
+    const semi = p.eatToken(.semicolon) orelse blk: {
+        // global 列表以 `;` 收尾；缺分号（`global $$foo->bar;` 的 `->`）报
+        // `unexpected T_OBJECT_OPERATOR, expecting ';'`（globalNonSimpleVarError[0]），
+        // 随后跳到语句同步点：`->` 这类后缀运算符不能作语句起始，会被跳过，其后的
+        // `bar` 由外层当新语句解析（php-parser 同——`->bar` 收作独立表达式语句），
+        // 且不重复报诊断。
+        if (p.tokTag() != .close_tag) {
+            p.addErrorExpected(ast.Error.Tag.expected_semi, .semi, p.tok_i, p.tok_i, p.tok_i, 0);
+            p.skipToStmtSync(false);
+        }
+        break :blk kw;
+    };
     const lr = try p.addNodeList(vars.items);
     const extra = try p.addExtra(GlobalComponents{
         .vars = .{ .start = lr.start, .end = lr.end },
@@ -1337,8 +1394,9 @@ pub fn parseHaltCompiler(p: *Parser) ast.ParseError!?Index {
     p.skipComments();
     const semi = (p.eatToken(.semicolon)) orelse blk: {
         // `__halt_compiler()` 后必须有 `;`（`?>` 前可省；php-parser 其余报
-        // unexpected EOF expecting ';'）。
-        p.warnMissingSemi();
+        // `unexpected EOF, expecting ';'`，haltCompilerInvalidSyntax[0]）。
+        if (p.tokTag() != .close_tag)
+            p.addErrorExpected(ast.Error.Tag.expected_semi, .semi, p.tok_i, p.tok_i, p.tok_i, 0);
         break :blk rparen;
     };
     // 设 tok_i 到 eof，使 parseRoot 的 while 循环自然结束（halt 语义：其后代码整体截断）

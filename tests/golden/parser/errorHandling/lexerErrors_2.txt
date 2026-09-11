@@ -1,0 +1,16 @@
+; 1 条诊断
+;   Unexpected null byte from 4:1 to 4:1
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_int `42`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$b`)
+      (expr_int `24`)
+    )
+  )
+)

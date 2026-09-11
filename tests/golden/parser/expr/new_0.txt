@@ -1,0 +1,71 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `A`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `A`)
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name_var_like `$a`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_array_dim_fetch `$a`
+        (expr_variable `$a`)
+        (expr_string `'b'`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_static_property_fetch `A`
+        (name `A`)
+        (name_var_like `$b`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_property_fetch `$a`
+        (expr_variable `$a`)
+        (name `b`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_property_fetch `$a`
+        (expr_property_fetch `$a`
+          (expr_variable `$a`)
+          (name `b`)
+        )
+        (name `c`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_array_dim_fetch `$a`
+        (expr_property_fetch `$a`
+          (expr_variable `$a`)
+          (name `b`)
+        )
+        (expr_string `'c'`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (name `A`)
+    )
+  )
+)

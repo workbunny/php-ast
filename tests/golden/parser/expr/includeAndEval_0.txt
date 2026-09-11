@@ -1,0 +1,27 @@
+(root `<?php`
+  (stmt_expression `include`
+    (expr_include `include`
+      (expr_string `'A.php'`)
+    )
+  )
+  (stmt_expression `include_once`
+    (expr_include `include_once`
+      (expr_string `'A.php'`)
+    )
+  )
+  (stmt_expression `require`
+    (expr_include `require`
+      (expr_string `'A.php'`)
+    )
+  )
+  (stmt_expression `require_once`
+    (expr_include `require_once`
+      (expr_string `'A.php'`)
+    )
+  )
+  (stmt_expression `eval`
+    (expr_eval `eval`
+      (expr_string `'A'`)
+    )
+  )
+)

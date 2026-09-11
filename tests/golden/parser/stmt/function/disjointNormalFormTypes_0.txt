@@ -1,0 +1,68 @@
+; 3 条诊断
+;   Syntax error, unexpected T_PUBLIC, expecting T_VARIABLE or '{' or '$' from 4:5 to 4:10
+;   Syntax error, unexpected T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG from 4:14 to 4:14
+;   Syntax error, unexpected T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG from 4:20 to 4:20
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+    )
+    (stmt_property `$prop2`
+      (type_union `|`
+        (type_intersection `&`
+          (type_name `A`
+            (name `A`)
+          )
+          (type_name `B`
+            (name `B`)
+          )
+        )
+        (type_name `C`
+          (name `C`)
+        )
+      )
+      (property_item `$prop2`)
+    )
+  )
+  (stmt_function `function` name=`test`
+    (param `$a`
+      (type_union `|`
+        (type_intersection `&`
+          (type_name `A`
+            (name `A`)
+          )
+          (type_name `B`
+            (name `B`)
+          )
+        )
+        (type_intersection `&`
+          (type_name `X`
+            (name `X`)
+          )
+          (type_name `Y`
+            (name `Y`)
+          )
+        )
+      )
+    )
+    (type_union `|`
+      (type_intersection `&`
+        (type_name `A`
+          (name `A`)
+        )
+        (type_name `B`
+          (name `B`)
+        )
+      )
+      (type_intersection `&`
+        (type_name `X`
+          (name `X`)
+        )
+        (type_name `Y`
+          (name `Y`)
+        )
+      )
+    )
+    (stmt_block `{`)
+  )
+)

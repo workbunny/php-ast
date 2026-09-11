@@ -1,0 +1,14 @@
+(root `<?php`
+  (stmt_expression `0o123`
+    (expr_int `0o123`)
+  )
+  (stmt_expression `0O123`
+    (expr_int `0O123`)
+  )
+  (stmt_expression `0o1_2_3`
+    (expr_int `0o1_2_3`)
+  )
+  (stmt_expression `0o1000000000000000000000`
+    (expr_int `0o1000000000000000000000`)
+  )
+)

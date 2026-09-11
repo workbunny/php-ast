@@ -1,0 +1,66 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (stmt_class `class` name=`<?php`
+        (stmt_method `function` name=`test`
+          (stmt_block `{`)
+        )
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (stmt_class `class` name=`<?php`
+        (name `A`)
+        (name `B`)
+        (name `C`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (stmt_class `class` name=`<?php`
+        (stmt_property `$foo`
+          (property_item `$foo`)
+        )
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (stmt_class `class` name=`<?php`
+        (name `A`)
+        (stmt_trait_use `use`
+          (name `T`)
+        )
+      )
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_class `class` name=`A`
+    (stmt_method `function` name=`test`
+      (stmt_block `{`
+        (stmt_return `return`
+          (expr_new `new`
+            (stmt_class `class` name=`<?php`
+              (name `A`)
+              (stmt_class_const `const` name=`A`
+                (const_decl `A`
+                  (expr_string `'B'`)
+                )
+              )
+            )
+            (expr_argument `$this`
+              (expr_variable `$this`)
+            )
+          )
+        )
+      )
+    )
+  )
+)

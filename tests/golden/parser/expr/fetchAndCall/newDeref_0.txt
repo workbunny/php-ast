@@ -1,0 +1,39 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_property_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (name `b`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_method_call `new`
+      (expr_property_fetch `new`
+        (expr_new `new`
+          (name `A`)
+        )
+        (name `b`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_array_dim_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (expr_string `'b'`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_array_dim_fetch `new`
+      (expr_array_dim_fetch `new`
+        (expr_new `new`
+          (name `A`)
+        )
+        (expr_string `'b'`)
+      )
+      (expr_string `'c'`)
+    )
+  )
+)

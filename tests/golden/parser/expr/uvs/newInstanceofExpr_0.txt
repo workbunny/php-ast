@@ -1,0 +1,30 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_binary `.`
+        (expr_string `'Foo'`)
+        (expr_variable `$bar`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_new `new`
+      (expr_binary `.`
+        (expr_string `'Foo'`)
+        (expr_variable `$bar`)
+      )
+      (expr_argument `$arg`
+        (expr_variable `$arg`)
+      )
+    )
+  )
+  (stmt_expression `$obj`
+    (expr_instanceof `$obj`
+      (expr_variable `$obj`)
+      (expr_binary `.`
+        (expr_string `'Foo'`)
+        (expr_variable `$bar`)
+      )
+    )
+  )
+)

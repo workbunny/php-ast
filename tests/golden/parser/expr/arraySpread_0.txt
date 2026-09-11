@@ -1,0 +1,178 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$array`)
+      (expr_array `[`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+        (expr_array_item `2`
+          (expr_int `2`)
+        )
+        (expr_array_item `3`
+          (expr_int `3`)
+        )
+      )
+    )
+  )
+  (stmt_function `function` name=`getArr`
+    (stmt_block `{`
+      (stmt_return `return`
+        (expr_array `[`
+          (expr_array_item `4`
+            (expr_int `4`)
+          )
+          (expr_array_item `5`
+            (expr_int `5`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_function `function` name=`arrGen`
+    (stmt_block `{`
+      (stmt_for `for`
+        (expr_assign `=`
+          (expr_variable `$i`)
+          (expr_int `11`)
+        )
+        (expr_binary `<`
+          (expr_variable `$i`)
+          (expr_int `15`)
+        )
+        (expr_post_inc `++`
+          (expr_variable `$i`)
+        )
+        (stmt_block `{`
+          (stmt_expression `yield`
+            (expr_yield `yield`
+              (expr_variable `$i`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `[`
+        (expr_array `[`)
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `[`
+        (expr_array `[`
+          (expr_array_item `1`
+            (expr_int `1`)
+          )
+          (expr_array_item `2`
+            (expr_int `2`)
+          )
+          (expr_array_item `3`
+            (expr_int `3`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `$array`
+        (expr_variable `$array`)
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `getArr`
+        (expr_func_call `getArr`
+          (name `getArr`)
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `arrGen`
+        (expr_func_call `arrGen`
+          (name `arrGen`)
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `new`
+        (expr_new `new`
+          (name `ArrayIterator`)
+          (expr_argument `[`
+            (expr_array `[`
+              (expr_array_item `'a'`
+                (expr_string `'a'`)
+              )
+              (expr_array_item `'b'`
+                (expr_string `'b'`)
+              )
+              (expr_array_item `'c'`
+                (expr_string `'c'`)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `0`
+        (expr_int `0`)
+      )
+      (expr_array_item `$array`
+        (expr_variable `$array`)
+      )
+      (expr_array_item `getArr`
+        (expr_func_call `getArr`
+          (name `getArr`)
+        )
+      )
+      (expr_array_item `6`
+        (expr_int `6`)
+      )
+      (expr_array_item `7`
+        (expr_int `7`)
+      )
+      (expr_array_item `8`
+        (expr_int `8`)
+      )
+      (expr_array_item `9`
+        (expr_int `9`)
+      )
+      (expr_array_item `10`
+        (expr_int `10`)
+      )
+      (expr_array_item `arrGen`
+        (expr_func_call `arrGen`
+          (name `arrGen`)
+        )
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `0`
+        (expr_int `0`)
+      )
+      (expr_array_item `$array`
+        (expr_variable `$array`)
+      )
+      (expr_array_item `$array`
+        (expr_variable `$array`)
+      )
+      (expr_array_item `'end'`
+        (expr_string `'end'`)
+      )
+    )
+  )
+)

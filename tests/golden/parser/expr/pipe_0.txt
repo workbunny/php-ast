@@ -1,0 +1,71 @@
+(root `<?php`
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_pipe `|`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+      (expr_variable `$c`)
+    )
+  )
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_binary `.`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+      (expr_binary `.`
+        (expr_variable `$c`)
+        (expr_variable `$d`)
+      )
+    )
+  )
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_variable `$a`)
+      (expr_binary `==`
+        (expr_variable `$b`)
+        (expr_variable `$c`)
+      )
+    )
+  )
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_binary `==`
+        (expr_variable `$c`)
+        (expr_variable `$a`)
+      )
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_pipe `|`
+        (expr_variable `$a`)
+        (expr_arrow_function `fn`
+          (param `$x`)
+          (expr_variable `$x`)
+        )
+      )
+      (expr_arrow_function `fn`
+        (param `$y`)
+        (expr_variable `$y`)
+      )
+    )
+  )
+  (stmt_expression `|`
+    (expr_pipe `|`
+      (expr_variable `$a`)
+      (expr_arrow_function `fn`
+        (param `$x`)
+        (expr_pipe `|`
+          (expr_variable `$x`)
+          (expr_arrow_function `fn`
+            (param `$y`)
+            (expr_variable `$y`)
+          )
+        )
+      )
+    )
+  )
+)

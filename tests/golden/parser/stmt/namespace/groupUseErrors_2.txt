@@ -1,0 +1,10 @@
+; 1 条诊断
+;   Syntax error, unexpected T_NAME_FULLY_QUALIFIED, expecting T_STRING or T_FUNCTION or T_CONST or T_NAME_QUALIFIED from 3:10 to 3:13
+(root `<?php`
+  (stmt_group_use `use`
+    (name `Foo`)
+    (use_use `\`
+      (name_fully_qualified `\Bar`)
+    )
+  )
+)

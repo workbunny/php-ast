@@ -1,0 +1,169 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `&=`
+    (expr_assign_op `&=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `|=`
+    (expr_assign_op `|=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `^=`
+    (expr_assign_op `^=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `.=`
+    (expr_assign_op `.=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `/=`
+    (expr_assign_op `/=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `-=`
+    (expr_assign_op `-=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `%=`
+    (expr_assign_op `%=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `*=`
+    (expr_assign_op `*=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `+=`
+    (expr_assign_op `+=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `<<=`
+    (expr_assign_op `<<=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `>>=`
+    (expr_assign_op `>>=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `**=`
+    (expr_assign_op `**=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `??=`
+    (expr_assign_op `??=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_assign_op `*=`
+        (expr_variable `$b`)
+        (expr_assign_op `**=`
+          (expr_variable `$c`)
+          (expr_variable `$d`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign_ref `=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+        )
+      )
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+        )
+        (expr_array_hole `,`)
+        (expr_array_item `$b`
+          (expr_variable `$b`)
+        )
+      )
+      (expr_variable `$c`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+        )
+        (expr_array_item `list`
+          (expr_list `list`
+            (expr_array_hole `,`)
+            (expr_array_item `$c`
+              (expr_variable `$c`)
+            )
+          )
+        )
+        (expr_array_item `$d`
+          (expr_variable `$d`)
+        )
+      )
+      (expr_variable `$e`)
+    )
+  )
+  (stmt_expression `++`
+    (expr_unary `++`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `++`
+    (expr_post_inc `++`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `--`
+    (expr_unary `--`
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `--`
+    (expr_post_dec `--`
+      (expr_variable `$a`)
+    )
+  )
+)

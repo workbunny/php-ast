@@ -1,0 +1,5 @@
+(root `<?php`
+  (stmt_function `function` name=`fn`
+    (stmt_block `{`)
+  )
+)

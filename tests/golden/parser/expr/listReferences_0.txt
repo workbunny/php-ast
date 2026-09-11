@@ -1,0 +1,44 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$v`
+          (expr_variable `$v`)
+        )
+      )
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_list `list`
+        (expr_array_item `$v`
+          (expr_variable `$v`)
+          (expr_string `'k'`)
+        )
+      )
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_item `$v`
+          (expr_variable `$v`)
+        )
+      )
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_item `$v`
+          (expr_variable `$v`)
+          (expr_string `'k'`)
+        )
+      )
+      (expr_variable `$x`)
+    )
+  )
+)

@@ -1,0 +1,114 @@
+(root `<?php`
+  (stmt_expression `new`
+    (expr_property_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (name `foo`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_method_call `new`
+      (expr_property_fetch `new`
+        (expr_new `new`
+          (name `A`)
+        )
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_class_const_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (name `FOO`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_static_call `new`
+      (expr_new `new`
+        (name `A`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_static_property_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (name_var_like `$foo`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_array_dim_fetch `new`
+      (expr_new `new`
+        (name `A`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_func_call `new`
+      (expr_new `new`
+        (name `A`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_property_fetch `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+      (name `foo`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_method_call `new`
+      (expr_property_fetch `new`
+        (expr_new `new`
+          (stmt_class `class` name=`<?php`)
+        )
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_class_const_fetch `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+      (name `FOO`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_static_call `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+    )
+  )
+  (stmt_expression `new`
+    (expr_static_property_fetch `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+      (name_var_like `$foo`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_array_dim_fetch `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `new`
+    (expr_func_call `new`
+      (expr_new `new`
+        (stmt_class `class` name=`<?php`)
+      )
+    )
+  )
+)

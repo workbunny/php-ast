@@ -1,0 +1,24 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (param `$bar`
+      (type_nullable `?`
+        (type_name `Foo`
+          (name `Foo`)
+        )
+      )
+    )
+    (param `$foo`
+      (type_nullable `?`
+        (type_name `string`
+          (name `string`)
+        )
+      )
+    )
+    (type_nullable `?`
+      (type_name `Baz`
+        (name `Baz`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

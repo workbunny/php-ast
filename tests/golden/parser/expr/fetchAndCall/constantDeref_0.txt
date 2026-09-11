@@ -1,0 +1,134 @@
+(root `<?php`
+  (stmt_expression `"`
+    (expr_array_dim_fetch `"`
+      (expr_encapsed `"`
+        (expr_string_part `abc`)
+      )
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_array_dim_fetch `"`
+      (expr_array_dim_fetch `"`
+        (expr_array_dim_fetch `"`
+          (expr_encapsed `"`
+            (expr_string_part `abc`)
+          )
+          (expr_int `2`)
+        )
+        (expr_int `0`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `[`
+    (expr_array_dim_fetch `[`
+      (expr_array `[`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+        (expr_array_item `2`
+          (expr_int `2`)
+        )
+        (expr_array_item `3`
+          (expr_int `3`)
+        )
+      )
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `[`
+    (expr_array_dim_fetch `[`
+      (expr_array_dim_fetch `[`
+        (expr_array_dim_fetch `[`
+          (expr_array `[`
+            (expr_array_item `1`
+              (expr_int `1`)
+            )
+            (expr_array_item `2`
+              (expr_int `2`)
+            )
+            (expr_array_item `3`
+              (expr_int `3`)
+            )
+          )
+          (expr_int `2`)
+        )
+        (expr_int `0`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `array`
+    (expr_array_dim_fetch `array`
+      (expr_array `array`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+        (expr_array_item `2`
+          (expr_int `2`)
+        )
+        (expr_array_item `3`
+          (expr_int `3`)
+        )
+      )
+      (expr_int `2`)
+    )
+  )
+  (stmt_expression `array`
+    (expr_array_dim_fetch `array`
+      (expr_array_dim_fetch `array`
+        (expr_array_dim_fetch `array`
+          (expr_array `array`
+            (expr_array_item `1`
+              (expr_int `1`)
+            )
+            (expr_array_item `2`
+              (expr_int `2`)
+            )
+            (expr_array_item `3`
+              (expr_int `3`)
+            )
+          )
+          (expr_int `2`)
+        )
+        (expr_int `0`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `FOO`
+    (expr_array_dim_fetch `FOO`
+      (expr_const_fetch `FOO`
+        (name `FOO`)
+      )
+      (expr_int `0`)
+    )
+  )
+  (stmt_expression `Foo`
+    (expr_array_dim_fetch `Foo`
+      (expr_class_const_fetch `Foo`
+        (expr_const_fetch `Foo`
+          (name `Foo`)
+        )
+        (name `BAR`)
+      )
+      (expr_int `1`)
+    )
+  )
+  (stmt_expression `$foo`
+    (expr_array_dim_fetch `$foo`
+      (expr_array_dim_fetch `$foo`
+        (expr_array_dim_fetch `$foo`
+          (expr_class_const_fetch `$foo`
+            (expr_variable `$foo`)
+            (name `BAR`)
+          )
+          (expr_int `2`)
+        )
+        (expr_int `1`)
+      )
+      (expr_int `0`)
+    )
+  )
+)

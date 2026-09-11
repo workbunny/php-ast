@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_function `function` name=`foo`
+    (param `$foo`
+      (expr_array `[`)
+    )
+    (stmt_block `{`)
+  )
+)

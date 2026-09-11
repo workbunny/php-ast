@@ -1,0 +1,7 @@
+; 1 条诊断
+;   Invalid numeric literal from 2:1 to 2:4
+(root `<?php`
+  (stmt_expression `0787`
+    (expr_int `0787`)
+  )
+)

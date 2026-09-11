@@ -1,0 +1,17 @@
+; 2 条诊断
+;   Syntax error, unexpected ')' from 3:14 to 3:14
+;   Syntax error, unexpected ')' from 4:18 to 4:18
+(root `<?php`
+  (stmt_foreach `foreach`
+    (expr_variable `$foo`)
+    (expr_variable `$foo`)
+    (stmt_block `{`
+      (stmt_expression `$bar`
+        (expr_variable `$bar`)
+      )
+    )
+  )
+  (stmt_expression `$bar`
+    (expr_variable `$bar`)
+  )
+)

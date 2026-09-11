@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Syntax error, unexpected ')' from 3:10 to 3:10
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_func_call `foo`
+      (name `foo`)
+    )
+  )
+)

@@ -1,0 +1,85 @@
+(root `<?php`
+  (stmt_expression `exit`
+    (expr_exit `exit`)
+  )
+  (stmt_expression `exit`
+    (expr_func_call `exit`
+      (name `exit`)
+    )
+  )
+  (stmt_expression `exit`
+    (expr_func_call `exit`
+      (name `exit`)
+      (expr_argument `'Die!'`
+        (expr_string `'Die!'`)
+      )
+    )
+  )
+  (stmt_expression `die`
+    (expr_exit `die`)
+  )
+  (stmt_expression `die`
+    (expr_func_call `die`
+      (name `die`)
+    )
+  )
+  (stmt_expression `die`
+    (expr_func_call `die`
+      (name `die`)
+      (expr_argument `'Exit!'`
+        (expr_string `'Exit!'`)
+      )
+    )
+  )
+  (stmt_expression `exit`
+    (expr_func_call `exit`
+      (name `exit`)
+      (expr_argument `status`
+        (expr_int `42`)
+      )
+    )
+  )
+  (stmt_expression `exit`
+    (expr_func_call `exit`
+      (name `exit`)
+      (expr_argument `$args`
+        (expr_variable `$args`)
+      )
+    )
+  )
+  (stmt_expression `exit`
+    (expr_func_call `exit`
+      (name `exit`)
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `\`
+    (expr_func_call `\`
+      (name_fully_qualified `\exit`)
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+    )
+  )
+  (stmt_expression `exit`
+    (expr_first_class_callable `exit`
+      (name `exit`)
+    )
+  )
+  (stmt_expression `DIE`
+    (expr_func_call `DIE`
+      (name `DIE`)
+      (expr_argument `$a`
+        (expr_variable `$a`)
+      )
+      (expr_argument `$b`
+        (expr_variable `$b`)
+      )
+    )
+  )
+)

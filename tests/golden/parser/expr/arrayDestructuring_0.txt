@@ -1,0 +1,80 @@
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+        )
+        (expr_array_item `$b`
+          (expr_variable `$b`)
+        )
+      )
+      (expr_array `[`
+        (expr_array_item `$c`
+          (expr_variable `$c`)
+        )
+        (expr_array_item `$d`
+          (expr_variable `$d`)
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_hole `,`)
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+        )
+        (expr_array_hole `,`)
+        (expr_array_hole `,`)
+        (expr_array_item `$b`
+          (expr_variable `$b`)
+        )
+        (expr_array_hole `,`)
+      )
+      (expr_variable `$foo`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_hole `,`)
+        (expr_array_item `[`
+          (expr_array `[`
+            (expr_array_item `[`
+              (expr_array `[`
+                (expr_array_item `$a`
+                  (expr_variable `$a`)
+                )
+                (expr_array_hole `,`)
+                (expr_array_item `$x`
+                  (expr_variable `$x`)
+                )
+              )
+            )
+          )
+        )
+        (expr_array_item `$b`
+          (expr_variable `$b`)
+        )
+      )
+      (expr_variable `$bar`)
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_array `[`
+        (expr_array_item `$b`
+          (expr_variable `$b`)
+          (expr_string `'a'`)
+        )
+        (expr_array_item `$a`
+          (expr_variable `$a`)
+          (expr_string `'b'`)
+        )
+      )
+      (expr_variable `$baz`)
+    )
+  )
+)

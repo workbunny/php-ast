@@ -1,0 +1,21 @@
+(root `<?php`
+  (stmt_expression `foo`
+    (expr_func_call `foo`
+      (name `foo`)
+      (expr_argument `a`
+        (expr_variable `$b`)
+      )
+      (expr_argument `c`
+        (expr_variable `$d`)
+      )
+    )
+  )
+  (stmt_expression `bar`
+    (expr_func_call `bar`
+      (name `bar`)
+      (expr_argument `class`
+        (expr_int `0`)
+      )
+    )
+  )
+)

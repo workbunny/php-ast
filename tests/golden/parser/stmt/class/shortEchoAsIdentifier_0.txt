@@ -1,0 +1,11 @@
+; 1 条诊断
+;   Cannot use "<?=" as an identifier from 4:17 to 4:19
+(root `<?php`
+  (stmt_class `class` name=`C`
+    (stmt_trait_use `use`
+      (name `T`)
+      (trait_use_adaptation_alias `x`)
+      (trait_use_adaptation_alias `<?=`)
+    )
+  )
+)

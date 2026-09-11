@@ -1,0 +1,20 @@
+(root `<?php`
+  (stmt_expression `Foo`
+    (expr_class_const_fetch `Foo`
+      (expr_const_fetch `Foo`
+        (name `Foo`)
+      )
+      (expr_func_call `bar`
+        (name `bar`)
+      )
+    )
+  )
+  (stmt_expression `$foo`
+    (expr_class_const_fetch `$foo`
+      (expr_variable `$foo`)
+      (expr_func_call `bar`
+        (name `bar`)
+      )
+    )
+  )
+)

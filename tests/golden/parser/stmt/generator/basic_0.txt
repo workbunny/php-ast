@@ -1,0 +1,150 @@
+(root `<?php`
+  (stmt_function `function` name=`gen`
+    (stmt_block `{`
+      (stmt_expression `yield`
+        (expr_yield `yield`)
+      )
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_variable `$value`)
+        )
+      )
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_variable `$key`)
+          (expr_variable `$value`)
+        )
+      )
+      (stmt_expression `=`
+        (expr_assign `=`
+          (expr_variable `$data`)
+          (expr_yield `yield`)
+        )
+      )
+      (stmt_expression `=`
+        (expr_assign `=`
+          (expr_variable `$data`)
+          (expr_yield `yield`
+            (expr_variable `$value`)
+          )
+        )
+      )
+      (stmt_expression `=`
+        (expr_assign `=`
+          (expr_variable `$data`)
+          (expr_yield `yield`
+            (expr_variable `$key`)
+            (expr_variable `$value`)
+          )
+        )
+      )
+      (stmt_if `if`
+        (expr_yield `yield`
+          (expr_variable `$foo`)
+        )
+        (stmt_nop `;`)
+        (stmt_if `elseif`
+          (expr_yield `yield`
+            (expr_variable `$foo`)
+          )
+          (stmt_nop `;`)
+        )
+      )
+      (stmt_if `if`
+        (expr_yield `yield`
+          (expr_variable `$foo`)
+        )
+        (stmt_block `:`)
+        (stmt_if `elseif`
+          (expr_yield `yield`
+            (expr_variable `$foo`)
+          )
+          (stmt_block `:`)
+        )
+      )
+      (stmt_while `while`
+        (expr_yield `yield`
+          (expr_variable `$foo`)
+        )
+        (stmt_nop `;`)
+      )
+      (stmt_do `do`
+        (stmt_block `{`)
+        (expr_yield `yield`
+          (expr_variable `$foo`)
+        )
+      )
+      (stmt_switch `switch`
+        (expr_yield `yield`
+          (expr_variable `$foo`)
+        )
+      )
+      (stmt_expression `die`
+        (expr_func_call `die`
+          (name `die`)
+          (expr_argument `yield`
+            (expr_yield `yield`
+              (expr_variable `$foo`)
+            )
+          )
+        )
+      )
+      (stmt_expression `func`
+        (expr_func_call `func`
+          (name `func`)
+          (expr_argument `yield`
+            (expr_yield `yield`
+              (expr_variable `$foo`)
+            )
+          )
+        )
+      )
+      (stmt_expression `$foo`
+        (expr_method_call `$foo`
+          (expr_property_fetch `$foo`
+            (expr_variable `$foo`)
+            (name `func`)
+          )
+          (expr_argument `yield`
+            (expr_yield `yield`
+              (expr_variable `$foo`)
+            )
+          )
+        )
+      )
+      (stmt_expression `new`
+        (expr_new `new`
+          (name `Foo`)
+          (expr_argument `yield`
+            (expr_yield `yield`
+              (expr_variable `$foo`)
+            )
+          )
+        )
+      )
+      (stmt_expression `yield`
+        (expr_yield_from `yield`
+          (expr_variable `$foo`)
+        )
+      )
+      (stmt_expression `and`
+        (expr_binary `and`
+          (expr_yield_from `yield`
+            (expr_variable `$foo`)
+          )
+          (expr_yield_from `yield`
+            (expr_variable `$bar`)
+          )
+        )
+      )
+      (stmt_expression `+`
+        (expr_binary `+`
+          (expr_yield_from `yield`
+            (expr_variable `$foo`)
+          )
+          (expr_variable `$bar`)
+        )
+      )
+    )
+  )
+)

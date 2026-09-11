@@ -1,0 +1,15 @@
+(root `<?php`
+  (stmt_echo `echo`
+    (expr_match `match`
+      (expr_int `1`)
+      (expr_match_arm `0`
+        (expr_string `'Foo'`)
+        (expr_int `0`)
+      )
+      (expr_match_arm `1`
+        (expr_string `'Bar'`)
+        (expr_int `1`)
+      )
+    )
+  )
+)

@@ -1,0 +1,17 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `Foo\Bar`)
+    (stmt_expression `foo`
+      (expr_const_fetch `foo`
+        (name `foo`)
+      )
+    )
+  )
+  (stmt_namespace `namespace`
+    (stmt_expression `bar`
+      (expr_const_fetch `bar`
+        (name `bar`)
+      )
+    )
+  )
+)

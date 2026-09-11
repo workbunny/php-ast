@@ -1,0 +1,60 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (param `$a1`
+      (type_name `bool`
+        (name `bool`)
+      )
+    )
+    (param `$a2`
+      (type_name `int`
+        (name `int`)
+      )
+    )
+    (param `$a3`
+      (type_name `float`
+        (name `float`)
+      )
+    )
+    (param `$a4`
+      (type_name `string`
+        (name `string`)
+      )
+    )
+    (param `$a5`
+      (type_name `iterable`
+        (name `iterable`)
+      )
+    )
+    (param `$a6`
+      (type_name `object`
+        (name `object`)
+      )
+    )
+    (param `$a7`
+      (type_name `mixed`
+        (name `mixed`)
+      )
+    )
+    (param `$a8`
+      (type_name `null`
+        (name `null`)
+      )
+    )
+    (param `$a9`
+      (type_name `false`
+        (name `false`)
+      )
+    )
+    (type_name `void`
+      (name `void`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test2`
+    (type_name `never`
+      (name `never`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_nop `// PHP 8.1`)
+)

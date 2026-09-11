@@ -1,0 +1,70 @@
+(root `<?php`
+  (stmt_expression `<`
+    (expr_binary `<`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `<=`
+    (expr_binary `<=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `>`
+    (expr_binary `>`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `>=`
+    (expr_binary `>=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `==`
+    (expr_binary `==`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `===`
+    (expr_binary `===`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `!=`
+    (expr_binary `!=`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `!==`
+    (expr_binary `!==`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `<=>`
+    (expr_binary `<=>`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_instanceof `$a`
+      (expr_variable `$a`)
+      (expr_const_fetch `B`
+        (name `B`)
+      )
+    )
+  )
+  (stmt_expression `$a`
+    (expr_instanceof `$a`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+)

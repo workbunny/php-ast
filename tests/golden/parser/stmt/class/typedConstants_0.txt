@@ -1,0 +1,55 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_class_const `const` name=`X`
+      (type_name `int`
+        (name `int`)
+      )
+      (const_decl `X`
+        (expr_int `1`)
+      )
+    )
+    (stmt_class_const `const` name=`Y`
+      (type_name `string`
+        (name `string`)
+      )
+      (const_decl `Y`
+        (expr_encapsed `"`
+          (expr_string_part `a`)
+        )
+      )
+      (const_decl `Z`
+        (expr_encapsed `"`
+          (expr_string_part `b`)
+        )
+      )
+    )
+    (stmt_class_const `const` name=`ARRAY`
+      (type_name `array`
+        (name `array`)
+      )
+      (const_decl `ARRAY`
+        (expr_array `[`)
+      )
+    )
+    (stmt_class_const `const` name=`FOO`
+      (type_union `|`
+        (type_name `Foo`
+          (name `Foo`)
+        )
+        (type_union `|`
+          (type_name `Bar`
+            (name `Bar`)
+          )
+          (type_name `null`
+            (name `null`)
+          )
+        )
+      )
+      (const_decl `FOO`
+        (expr_const_fetch `null`
+          (name `null`)
+        )
+      )
+    )
+  )
+)

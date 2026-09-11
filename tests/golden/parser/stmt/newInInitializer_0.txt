@@ -1,0 +1,51 @@
+(root `<?php`
+  (stmt_const `const`
+    (const_decl `C`
+      (expr_new `new`
+        (name `Foo`)
+      )
+    )
+  )
+  (stmt_function `function` name=`a`
+    (param `$x`
+      (expr_new `new`
+        (name `Foo`)
+      )
+    )
+    (stmt_block `{`
+      (stmt_static `static`
+        (static_var `$y`
+          (expr_new `new`
+            (name `Foo`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_class `class` name=`Bar`
+    (attr_group `#`
+      (attribute `Attr`
+        (name `Attr`)
+        (expr_argument `new`
+          (expr_new `new`
+            (name `Foo`)
+          )
+        )
+      )
+    )
+    (stmt_class_const `const` name=`C`
+      (const_decl `C`
+        (expr_new `new`
+          (name `Foo`)
+        )
+      )
+    )
+    (stmt_property `$prop`
+      (property_item `$prop`
+        (expr_new `new`
+          (name `Foo`)
+        )
+      )
+    )
+  )
+)

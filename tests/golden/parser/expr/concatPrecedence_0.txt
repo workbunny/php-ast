@@ -1,0 +1,26 @@
+(root `<?php`
+  (stmt_expression `+`
+    (expr_binary `+`
+      (expr_binary `.`
+        (expr_binary `+`
+          (expr_int `1`)
+          (expr_int `2`)
+        )
+        (expr_int `3`)
+      )
+      (expr_int `4`)
+    )
+  )
+  (stmt_expression `<<`
+    (expr_binary `<<`
+      (expr_binary `<<`
+        (expr_int `1`)
+        (expr_binary `.`
+          (expr_int `2`)
+          (expr_int `3`)
+        )
+      )
+      (expr_int `4`)
+    )
+  )
+)

@@ -1,0 +1,37 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `fn`)
+    (stmt_namespace `namespace`
+      (name `fn\use`)
+      (stmt_namespace `namespace`
+        (name `self`)
+        (stmt_namespace `namespace`
+          (name `parent`)
+          (stmt_namespace `namespace`
+            (name `static`)
+            (stmt_expression `fn`
+              (expr_func_call `fn`
+                (name `fn\use`)
+              )
+            )
+            (stmt_expression `\`
+              (expr_func_call `\`
+                (name_fully_qualified `\fn\use`)
+              )
+            )
+            (stmt_expression `namespace`
+              (expr_func_call `namespace`
+                (name_relative `namespace\fn\use`)
+              )
+            )
+            (stmt_expression `private`
+              (expr_func_call `private`
+                (name `private\protected\public\static\abstract\final`)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)

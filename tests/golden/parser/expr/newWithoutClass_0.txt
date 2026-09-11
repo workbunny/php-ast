@@ -1,0 +1,6 @@
+; 1 条诊断
+;   Syntax error, unexpected ';' from 2:4 to 2:4
+(root `<?php`
+  (stmt_error `new`)
+  (stmt_nop `;`)
+)

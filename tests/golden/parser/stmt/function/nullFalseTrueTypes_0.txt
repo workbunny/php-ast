@@ -1,0 +1,20 @@
+(root `<?php`
+  (stmt_function `function` name=`test`
+    (type_name `null`
+      (name `null`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test`
+    (type_name `false`
+      (name `false`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_function `function` name=`test`
+    (type_name `true`
+      (name `true`)
+    )
+    (stmt_block `{`)
+  )
+)

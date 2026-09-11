@@ -1,0 +1,35 @@
+(root `<?php`
+  (stmt_expression `A`
+    (expr_const_fetch `A`
+      (name `A`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_class_const_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name `B`)
+    )
+  )
+  (stmt_expression `A`
+    (expr_class_const_fetch `A`
+      (expr_const_fetch `A`
+        (name `A`)
+      )
+      (name `class`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_class_const_fetch `$a`
+      (expr_variable `$a`)
+      (name `B`)
+    )
+  )
+  (stmt_expression `$a`
+    (expr_class_const_fetch `$a`
+      (expr_variable `$a`)
+      (name `class`)
+    )
+  )
+)

@@ -1,0 +1,67 @@
+(root `<?php`
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$a`
+        (type_name `bool`
+          (name `bool`)
+        )
+      )
+      (expr_variable `$a`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$x`
+        (expr_int `42`)
+      )
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$x`)
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$x`)
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$x`)
+      (param `$rest`)
+      (expr_variable `$rest`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (type_name `int`
+        (name `int`)
+      )
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$a`)
+      (param `$b`)
+      (expr_binary `and`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+    )
+  )
+  (stmt_expression `fn`
+    (expr_arrow_function `fn`
+      (param `$a`)
+      (param `$b`)
+      (expr_binary `&&`
+        (expr_variable `$a`)
+        (expr_variable `$b`)
+      )
+    )
+  )
+)

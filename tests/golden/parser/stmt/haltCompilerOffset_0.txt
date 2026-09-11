@@ -1,0 +1,13 @@
+(root `<?php`
+  (stmt_expression `var_dump`
+    (expr_func_call `var_dump`
+      (name `var_dump`)
+      (expr_argument `__HALT_COMPILER_OFFSET__`
+        (expr_const_fetch `__HALT_COMPILER_OFFSET__`
+          (name `__HALT_COMPILER_OFFSET__`)
+        )
+      )
+    )
+  )
+  (stmt_halt `__halt_compiler`)
+)

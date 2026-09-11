@@ -1,0 +1,12 @@
+; 1 条诊断
+;   Syntax error, unexpected T_STRING from 5:5 to 5:9
+(root `<?php`
+  (stmt_class `class` name=`Foo`
+    (stmt_property `$bar1`
+      (property_item `$bar1`)
+    )
+    (stmt_property `$bar`
+      (property_item `$bar`)
+    )
+  )
+)

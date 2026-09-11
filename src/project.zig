@@ -231,7 +231,8 @@ test "project :: loadDir :: 递归收集 .php 并解析（跳过其他类型）"
     try tmp.dir.writeFile(io, .{ .sub_path = "lib/b.php", .data = "<?php function f() { return 2; }" });
     try tmp.dir.writeFile(io, .{ .sub_path = "ignore.txt", .data = "not php" });
 
-    const tmp_path = try std.fs.path.join(gpa, &.{ ".zig-cache", "tmp", tmp.sub_path[0..] });
+    // 取临时目录的**真实路径**（不依赖测试框架把 tmpDir 放在哪个前缀下）
+    const tmp_path = try tmp.dir.realPathFileAlloc(io, ".", gpa);
     defer gpa.free(tmp_path);
 
     var project = try loadDir(gpa, io, tmp_path, testing.v84);
@@ -259,7 +260,8 @@ test "project :: loadDir :: 空目录返回零文件" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
 
-    const tmp_path = try std.fs.path.join(gpa, &.{ ".zig-cache", "tmp", tmp.sub_path[0..] });
+    // 取临时目录的**真实路径**（不依赖测试框架把 tmpDir 放在哪个前缀下）
+    const tmp_path = try tmp.dir.realPathFileAlloc(io, ".", gpa);
     defer gpa.free(tmp_path);
 
     var project = try loadDir(gpa, io, tmp_path, testing.v84);
@@ -284,7 +286,8 @@ test "project :: loadDir :: 每个文件独立 AST 可溯源源码" {
 
     try tmp.dir.writeFile(io, .{ .sub_path = "x.php", .data = "<?php echo 'hi';" });
 
-    const tmp_path = try std.fs.path.join(gpa, &.{ ".zig-cache", "tmp", tmp.sub_path[0..] });
+    // 取临时目录的**真实路径**（不依赖测试框架把 tmpDir 放在哪个前缀下）
+    const tmp_path = try tmp.dir.realPathFileAlloc(io, ".", gpa);
     defer gpa.free(tmp_path);
 
     var project = try loadDir(gpa, io, tmp_path, testing.v84);

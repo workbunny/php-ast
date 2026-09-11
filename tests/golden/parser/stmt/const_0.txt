@@ -1,0 +1,69 @@
+(root `<?php`
+  (stmt_const `const`
+    (const_decl `A`
+      (expr_int `0`)
+    )
+    (const_decl `B`
+      (expr_float `1.0`)
+    )
+    (const_decl `C`
+      (expr_string `'A'`)
+    )
+    (const_decl `D`
+      (expr_const_fetch `E`
+        (name `E`)
+      )
+    )
+  )
+  (stmt_const `const`
+    (attr_group `#`
+      (attribute `Example`
+        (name `Example`)
+      )
+    )
+    (const_decl `WithOneAttribute`
+      (expr_int `1`)
+    )
+  )
+  (stmt_const `const`
+    (attr_group `#`
+      (attribute `First`
+        (name `First`)
+      )
+    )
+    (attr_group `#`
+      (attribute `Second`
+        (name `Second`)
+      )
+    )
+    (const_decl `WithUngroupedAttriutes`
+      (expr_int `2`)
+    )
+  )
+  (stmt_const `const`
+    (attr_group `#`
+      (attribute `First`
+        (name `First`)
+      )
+      (attribute `Second`
+        (name `Second`)
+      )
+    )
+    (const_decl `WithGroupAttributes`
+      (expr_int `3`)
+    )
+  )
+  (stmt_const `const`
+    (attr_group `#`
+      (attribute `Example`
+        (name `Example`)
+      )
+    )
+    (const_decl `ThisIsInvalid`
+      (expr_int `4`)
+    )
+    (const_decl `AttributesOnMultipleConstants`
+      (expr_int `5`)
+    )
+  )
+)

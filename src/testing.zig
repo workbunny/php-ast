@@ -18,6 +18,7 @@ const std = @import("std");
 const PhpVersion = @import("version.zig").PhpVersion;
 
 /// 常用目标版本常量，避免各测试散落 `.{ .id = 80400 }` 这类魔数。
+pub const v74: PhpVersion = .{ .id = 70400 };
 pub const v80: PhpVersion = .{ .id = 80000 };
 pub const v81: PhpVersion = .{ .id = 80100 };
 pub const v82: PhpVersion = .{ .id = 80200 };

@@ -1,0 +1,52 @@
+(root `<?php`
+  (stmt_expression `''`
+    (expr_string `''`)
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`)
+  )
+  (stmt_expression `b`
+    (expr_encapsed `b`
+      (expr_string_part `''`)
+      (expr_string_part `;`)
+      (expr_string_part `b`)
+    )
+  )
+  (stmt_expression `'Hi'`
+    (expr_string `'Hi'`)
+  )
+  (stmt_expression `b`
+    (expr_encapsed `b`
+      (expr_string_part `'Hi'`)
+      (expr_string_part `;`)
+      (expr_string_part `B`)
+      (expr_string_part `'Hi'`)
+      (expr_string_part `;`)
+      (expr_string_part `"`)
+      (expr_string_part `Hi`)
+    )
+  )
+  (stmt_expression `b`
+    (expr_encapsed `b`
+      (expr_string_part `Hi`)
+    )
+  )
+  (stmt_expression `B`
+    (expr_encapsed `B`
+      (expr_string_part `Hi`)
+    )
+  )
+  (stmt_expression `'!\'!\\!\a!'`
+    (expr_string `'!\'!\\!\a!'`)
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `!\"!\\!\$!\n!\r!\t!\f!\v!\e!\a`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `!\xFF!\377!\400!\0!`)
+    )
+  )
+)

@@ -1,0 +1,19 @@
+(root `<?php`
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\u{0}`)
+    )
+  )
+  (stmt_expression `"`
+    (expr_encapsed `"`
+      (expr_string_part `\u{114}`)
+      (expr_variable `$foo`)
+    )
+  )
+  (stmt_expression ```
+    (expr_shell_exec ```
+      (expr_string_part `\u{1F602}`)
+      (expr_variable `$bar`)
+    )
+  )
+)

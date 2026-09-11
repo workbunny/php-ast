@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Syntax error, unexpected '{', expecting ';' from 3:9 to 3:9
+(root `<?php`
+  (stmt_use `use`
+    (use_use `Foo`
+      (name `Foo`)
+    )
+  )
+)

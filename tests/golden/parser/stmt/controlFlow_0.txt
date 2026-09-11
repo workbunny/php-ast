@@ -1,0 +1,19 @@
+(root `<?php`
+  (stmt_break `break`)
+  (stmt_break `break`
+    (expr_int `2`)
+  )
+  (stmt_continue `continue`)
+  (stmt_continue `continue`
+    (expr_int `2`)
+  )
+  (stmt_return `return`)
+  (stmt_return `return`
+    (expr_variable `$a`)
+  )
+  (stmt_throw `throw`
+    (expr_variable `$e`)
+  )
+  (stmt_label `label`)
+  (stmt_goto `label`)
+)

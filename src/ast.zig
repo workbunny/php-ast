@@ -94,6 +94,62 @@ pub const Error = struct {
     /// 仅 `unsupported_version` 使用：该节点语法要求的 PHP 版本；
     /// 其余错误恒为 `BASE_VERSION`(id=0)，读取无意义。
     required: PhpVersion,
+    /// 语法错误的「期望集合」：渲染为 `, expecting <集合>` 后缀。php-parser 的
+    /// 期望集合由 LALR 状态决定（同一判据在不同语法位置期望不同），故由各报点
+    /// 显式指定，而非按 tag 统一推断。非语法错误恒为 `.none`。
+    expected: Expected = .none,
+
+    /// `Syntax error, unexpected X, expecting <集合>` 的 `<集合>` 取值。
+    /// 每条对应 php-parser 一个具体状态的期望列表（见 `expectingText`）。
+    pub const Expected = enum {
+        /// 不渲染 expecting 后缀（php-parser 该状态下期望集合为空/未列）。
+        none,
+        /// `';'`
+        semi,
+        /// `';' or '{'`
+        semi_or_lbrace,
+        /// `'('`
+        lparen,
+        /// 列表项之后：`',' or ']' or ')'`
+        comma_list,
+        /// `T_STRING`（声明名/别名位）
+        name,
+        /// group use 前缀名字位
+        use_name,
+        /// 类成员名位
+        member_name,
+        /// 变量名位（`$` 之后，允许 `$x` / `${...}` / `$$x`）
+        var_name,
+        /// 参数名位：只接受变量本身，不含 `$` / `{` 起始（php-parser 该状态
+        /// 期望集合仅 `T_VARIABLE`）
+        variable,
+
+        fn expectingText(e: Expected) []const u8 {
+            return switch (e) {
+                .none => "",
+                .semi => "';'",
+                .semi_or_lbrace => "';' or '{'",
+                .lparen => "'('",
+                .comma_list => "',' or ']' or ')'",
+                .name => "T_STRING",
+                .use_name => "T_STRING or T_FUNCTION or T_CONST or T_NAME_QUALIFIED",
+                .member_name => "T_STRING or T_VARIABLE or '{' or '$'",
+                .var_name => "T_VARIABLE or '{' or '$'",
+                .variable => "T_VARIABLE",
+            };
+        }
+    };
+
+    /// 渲染时实际采用的期望集合：显式指定的优先；`expected_variable` 的语义恒为
+    /// 「变量名位」（`simple_variable` 只接受 `$x`/`${...}`/`$$x`），其报点不逐一
+    /// 标注 `expected`，在此兜底为 `.var_name`。
+    pub fn effectiveExpected(self: Error) Expected {
+        if (self.expected != .none) return self.expected;
+        return switch (self.tag) {
+            .expected_variable => .var_name,
+            else => .none,
+        };
+    }
 
     /// token 的 php-parser 显示名：`Syntax error, unexpected <X>` 的 `<X>`。
     ///
@@ -106,32 +162,52 @@ pub const Error = struct {
         const text = tree.tokenSlice(tok);
         return switch (tag) {
             .eof => "EOF",
-            .identifier => "T_STRING",
+            // 词法器按源码原样切片（大小写敏感），但 PHP 关键字大小写不敏感：
+            // `ReadOnly` / `Static` 在 php-parser 是 T_READONLY / T_STATIC 而非
+            // T_STRING，故此处回判——文本命中关键字则按关键字名显示。
+            .identifier => if (Token.keywordTagIgnoreCase(text)) |k|
+                (keywordDisplayName(k, out) orelse "T_STRING")
+            else
+                "T_STRING",
             .variable => "T_VARIABLE",
+            // 完全限定名的前导 `\`：php-parser 把 `\Foo\Bar` 整体作一个
+            // T_NAME_FULLY_QUALIFIED token，故显示名按名类给出（本库词法把 `\`
+            // 与名字段分开切，诊断区间由报点自行覆盖整名）。
+            .backslash => "T_NAME_FULLY_QUALIFIED",
             .arrow => "T_OBJECT_OPERATOR",
             .double_colon => "T_PAAMAYIM_NEKUDOTAYIM",
             .nullsafe_arrow => "T_NULLSAFE_OBJECT_OPERATOR",
-            .ampersand => "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG",
+            // `&` 的 php-parser token 名分两态，由**后随 token** 决定：后随变量或
+            // `...`（引用形参 / 引用实参 / 引用解构）为 FOLLOWED，其余为 NOT_FOLLOWED。
+            .ampersand => if (tok + 1 < @as(TokenIndex, @intCast(tree.tokens.len)) and
+                (tree.tokenTag(tok + 1) == .variable or tree.tokenTag(tok + 1) == .ellipsis))
+                "T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG"
+            else
+                "T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG",
             .ellipsis => "T_ELLIPSIS",
             else => if (tag.isKeyword()) blk: {
-                // PHP 关键字 token 名 = `T_` + 大写。源码可能带大小写（`Break`），
-                // 统一按关键字表的小写文本大写输出。
-                var lower: ?[]const u8 = null;
-                for (Token.keywords) |k| {
-                    if (k.tag == tag) {
-                        lower = k.t;
-                        break;
-                    }
-                }
-                const kw_text = lower orelse text;
-                var tmp: [64]u8 = undefined;
-                if (kw_text.len < tmp.len) {
-                    for (kw_text, 0..) |ch, i| tmp[i] = std.ascii.toUpper(ch);
-                    return std.fmt.bufPrint(out, "T_{s}", .{tmp[0..kw_text.len]}) catch "T_";
-                }
+                // 源码可能带大小写（`Break`），统一按关键字表的小写文本大写输出。
+                if (keywordDisplayName(tag, out)) |n| return n;
                 break :blk "'{s}'";
             } else std.fmt.bufPrint(out, "'{s}'", .{text}) catch "'?'",
         };
+    }
+
+    /// 关键字 tag → php-parser token 名（`T_` + 关键字表文本的大写）。
+    /// 表内查不到该 tag 时返回 `null`（调用方退回引号原文形式）。
+    fn keywordDisplayName(tag: Token.Tag, out: []u8) ?[]const u8 {
+        var lower: ?[]const u8 = null;
+        for (Token.keywords) |k| {
+            if (k.tag == tag) {
+                lower = k.t;
+                break;
+            }
+        }
+        const kw_text = lower orelse return null;
+        var tmp: [64]u8 = undefined;
+        if (kw_text.len >= tmp.len) return null;
+        for (kw_text, 0..) |ch, i| tmp[i] = std.ascii.toUpper(ch);
+        return std.fmt.bufPrint(out, "T_{s}", .{tmp[0..kw_text.len]}) catch "T_";
     }
 
     /// 把错误渲染成 php-parser 风格文案：
@@ -153,15 +229,9 @@ pub const Error = struct {
                 },
             ) catch "unsupported version";
         }
-        // 个别词法消息自含位置、不带 `from..to` 后缀（php-parser 原样消息）。
-        if (self.tag == .invalid_utf8_codepoint) {
-            const loc = tree.tokenLocation(0, self.token);
-            return std.fmt.bufPrint(
-                buf,
-                "Invalid UTF-8 codepoint escape sequence: Codepoint too large on line {d}",
-                .{loc.line + 1},
-            ) catch "Invalid UTF-8 codepoint escape sequence";
-        }
+        // 自含位置的消息（php-parser 原样文案）不带 `from..to` 后缀——判定集中在
+        // `Tag.discardsLocationSuffix`，文案本体只在 `rawMessage` 里写一份。
+        if (self.tag.discardsLocationSuffix()) return self.rawMessage(tree, buf);
         const sl = tree.tokenLocation(0, self.token);
         const el = tree.tokenLocation(0, self.token_end);
         // 结束列：php-parser 的 `endFilePos` 是「最后一个字符所在偏移」（含），
@@ -191,26 +261,22 @@ pub const Error = struct {
         return switch (self.tag) {
             // ---- 语法类：`Syntax error, unexpected <token>`（php-parser 报在意外
             // token 上；`self.token` 即该 token）。----
-            .expected_variable => blk: {
-                // 变量名位（`$`/`::`/`->` 后需变量）：php-parser 恒报
-                // `unexpected X, expecting T_VARIABLE or '{' or '$'`（simple_variable
-                // 只接受这三种起始）。
-                var nbuf: [64]u8 = undefined;
-                const name = tokenDisplayName(tree, self.token, &nbuf);
-                break :blk std.fmt.bufPrint(
-                    buf,
-                    "Syntax error, unexpected {s}, expecting T_VARIABLE or '{{' or '$'",
-                    .{name},
-                ) catch "Syntax error";
-            },
-            .expected_token, .expected_semi, .expected_expr, .expected_identifier,
-            .expected_lbrace, .expected_rbrace, .expected_rparen, .expected_lbracket,
-            .unexpected_eof,
+            .expected_token, .expected_semi, .expected_expr, .expected_variable,
+            .expected_identifier, .expected_lbrace, .expected_rbrace, .expected_rparen,
+            .expected_lbracket, .unexpected_eof,
             => blk: {
                 // token 显示名先用独立缓冲渲染（不能与 bufPrint 的目标共用 buf）
                 var nbuf: [64]u8 = undefined;
                 const name = tokenDisplayName(tree, self.token, &nbuf);
-                break :blk std.fmt.bufPrint(buf, "Syntax error, unexpected {s}", .{name}) catch "Syntax error";
+                const exp = self.effectiveExpected();
+                if (exp == .none) {
+                    break :blk std.fmt.bufPrint(buf, "Syntax error, unexpected {s}", .{name}) catch "Syntax error";
+                }
+                break :blk std.fmt.bufPrint(
+                    buf,
+                    "Syntax error, unexpected {s}, expecting {s}",
+                    .{ name, exp.expectingText() },
+                ) catch "Syntax error";
             },
 
             // 语义：修饰符
@@ -391,6 +457,13 @@ pub const Error = struct {
         short_echo_identifier,
         /// `\u{...}` 码点越界。
         invalid_utf8_codepoint,
+
+        /// 该 tag 的消息**自含位置**（如 `on line N`），渲染时不追加
+        /// ` from L:C to L:C` 后缀。判定集中在此，避免 `format` 与 `rawMessage`
+        /// 各写一份自含位置的清单。
+        pub fn discardsLocationSuffix(t: Tag) bool {
+            return t == .invalid_utf8_codepoint;
+        }
     };
 };
 
@@ -1381,12 +1454,10 @@ fn lexScanDiag(
                 }
             },
             .int_literal, .float_literal => {
-                // `_` 分隔非法：连续 `__` 或位于字面量首/尾（`1_`、`_1`、`1__2`）。
-                if (std.mem.indexOfScalar(u8, s, '_') != null) {
-                    if (s[0] == '_' or s[s.len - 1] == '_' or std.mem.indexOf(u8, s, "__") != null) {
-                        try addLexErrorEx(gpa, errors, .invalid_numeric_separator, ti, ti, ti, 0);
-                    }
-                }
+                // 字面量内的 `_` 合法性不需在此判定：词法器只把「两侧都是数字」的 `_`
+                // 并入字面量（`1_000`），其余（`100_`、`1__1`、`1._0`）在 `_` 处结束
+                // 字面量，`_` 归标识符并由语法层报 unexpected T_STRING——与 php-parser
+                // 的切分一致（其无「非法数字分隔符」专用消息）。
                 // 非法前导零整数（PHP 7.0 起）：`0` 开头、无 0x/0b/0o 前缀的整数字面量
                 // 中含 8/9 即报 invalid numeric literal（`0787`、`089`）；`000`/`0777`
                 // 是合法八进制。对齐 php-parser（依赖宿主 PHP 词法）：0 前缀含 8/9 的
@@ -1654,33 +1725,40 @@ test "ast :: node_versions :: 与 nodes 等长" {
     try std.testing.expectEqual(tree.nodes.len, tree.node_versions.len);
 }
 
+/// 断言某 tag 的首个节点（按声明顺序）的引入版本为 `want`（0 = 基础语法）。
+fn expectFirstNodeVersion(tree: Ast, tag: Node.Tag, want: u32) !void {
+    for (tree.nodes.items(.tag), 0..) |t, i| {
+        if (t == tag) {
+            try std.testing.expectEqual(want, tree.node_versions[i].id);
+            return;
+        }
+    }
+    std.debug.print("\n节点未出现: {s}\n", .{@tagName(tag)});
+    try std.testing.expect(false);
+}
+
 test "ast :: nodeVersion :: 标记节点引入版本" {
     const gpa = std.testing.allocator;
-    var tree = try Ast.parse(gpa,
-        \\<?php
-        \\enum E { case A; }
-        \\$x = new Foo;
-        \\$y = new Bar->m();
-    , testing.v84);
-    defer tree.deinit(gpa);
-    try testing.expectNoErrors(tree);
-
-    var new_count: usize = 0;
-    for (tree.nodes.items(.tag), 0..) |tag, i| {
-        const v = tree.node_versions[i];
-        if (tag == .stmt_enum or tag == .stmt_case) {
-            try std.testing.expectEqual(@as(u32, 80100), v.id); // enum/case 为 8.1
-        }
-        if (tag == .expr_new) {
-            // 无括号 new 本身是基础语法（`new Foo;` → 0）；8.4 只标记链式形态
-            // （`new Bar->m()` 无括号 new 后接链 token）。按源码出现次序区分。
-            if (new_count == 1) {
-                try std.testing.expectEqual(@as(u32, 80400), v.id);
-            } else {
-                try std.testing.expectEqual(@as(u32, 0), v.id);
-            }
-            new_count += 1;
-        }
+    // enum 与 enum case 为 8.1
+    {
+        var t = try Ast.parse(gpa, "<?php enum E { case A; }", testing.v84);
+        defer t.deinit(gpa);
+        try testing.expectNoErrors(t);
+        try expectFirstNodeVersion(t, .stmt_enum, 80100);
+        try expectFirstNodeVersion(t, .stmt_case, 80100);
+    }
+    // 无括号 new 本身是基础语法；8.4 只标记「无括号 new 后接链 token」的形态
+    {
+        var t = try Ast.parse(gpa, "<?php $x = new Foo;", testing.v84);
+        defer t.deinit(gpa);
+        try testing.expectNoErrors(t);
+        try expectFirstNodeVersion(t, .expr_new, 0);
+    }
+    {
+        var t = try Ast.parse(gpa, "<?php $y = new Bar->m();", testing.v84);
+        defer t.deinit(gpa);
+        try testing.expectNoErrors(t);
+        try expectFirstNodeVersion(t, .expr_new, 80400);
     }
 }
 
@@ -1977,18 +2055,11 @@ test "ast :: lastToken :: 各类语句的区间含尾部分号" {
             else => &.{},
         };
         if (members.len > 0) target = members[0];
-        if (tree.nodeTag(target) == .stmt_while) {
-            // while 的 break/continue 在循环体内
-            try std.testing.expectEqualStrings(
-                "}",
-                tree.tokenSlice(tree.lastToken(target)),
-            );
-            continue;
-        }
-
+        // 语句区间必须以**收尾符**结束：表达式类语句为 `;`，块/循环类语句为 `}`
+        // （`while` / `if` / 函数体等同理，无需逐类特判）。
         const last = tree.tokenSlice(tree.lastToken(target));
-        if (!std.mem.eql(u8, ";", last)) {
-            std.debug.print("\n语句区间不含分号: {s}\n  实际末 token = `{s}`\n", .{ src, last });
+        if (!std.mem.eql(u8, ";", last) and !std.mem.eql(u8, "}", last)) {
+            std.debug.print("\n语句区间不含收尾符: {s}\n  实际末 token = `{s}`\n", .{ src, last });
             try std.testing.expect(false);
         }
     }

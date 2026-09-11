@@ -1,0 +1,3 @@
+(root `<?php`
+  (stmt_class `class` name=`self`)
+)

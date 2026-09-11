@@ -1,0 +1,24 @@
+(root `<?php`
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `1`
+        (expr_int `1`)
+      )
+      (expr_array_hole `,`)
+      (expr_array_item `2`
+        (expr_int `2`)
+      )
+    )
+  )
+  (stmt_expression `array`
+    (expr_array `array`
+      (expr_array_item `1`
+        (expr_int `1`)
+      )
+      (expr_array_hole `,`)
+      (expr_array_item `2`
+        (expr_int `2`)
+      )
+    )
+  )
+)

@@ -1,0 +1,10 @@
+; 1 条诊断
+;   Unknown hook "FOO", expected "get" or "set" from 3:20 to 3:22
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$prop`
+      (property_item `$prop`)
+      (property_hook `FOO`)
+    )
+  )
+)

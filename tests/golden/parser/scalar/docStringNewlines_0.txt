@@ -1,0 +1,44 @@
+(root `<?php`
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Foo\n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_variable `$var`)
+      (expr_string_part `\n\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\r\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `\r\n\r\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_string_part `Foo\r\n\r\n`)
+    )
+  )
+  (stmt_expression `<<<`
+    (expr_encapsed `<<<`
+      (expr_variable `$var`)
+      (expr_string_part `\r\n\r\n`)
+    )
+  )
+)

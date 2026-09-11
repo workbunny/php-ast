@@ -1,0 +1,71 @@
+(root `<?php`
+  (stmt_expression `array`
+    (expr_array `array`)
+  )
+  (stmt_expression `array`
+    (expr_array `array`
+      (expr_array_item `'a'`
+        (expr_string `'a'`)
+      )
+    )
+  )
+  (stmt_expression `array`
+    (expr_array `array`
+      (expr_array_item `'a'`
+        (expr_string `'a'`)
+      )
+    )
+  )
+  (stmt_expression `array`
+    (expr_array `array`
+      (expr_array_item `'a'`
+        (expr_string `'a'`)
+      )
+      (expr_array_item `'b'`
+        (expr_string `'b'`)
+      )
+    )
+  )
+  (stmt_expression `array`
+    (expr_array `array`
+      (expr_array_item `'a'`
+        (expr_string `'a'`)
+      )
+      (expr_array_item `$b`
+        (expr_variable `$b`)
+      )
+      (expr_array_item `'d'`
+        (expr_string `'d'`)
+        (expr_string `'c'`)
+      )
+      (expr_array_item `$f`
+        (expr_variable `$f`)
+        (expr_string `'e'`)
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`)
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `1`
+        (expr_int `1`)
+      )
+      (expr_array_item `2`
+        (expr_int `2`)
+      )
+      (expr_array_item `3`
+        (expr_int `3`)
+      )
+    )
+  )
+  (stmt_expression `[`
+    (expr_array `[`
+      (expr_array_item `'b'`
+        (expr_string `'b'`)
+        (expr_string `'a'`)
+      )
+    )
+  )
+)

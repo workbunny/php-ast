@@ -1,0 +1,31 @@
+(root `<?php`
+  (stmt_for `for`
+    (expr_assign `=`
+      (expr_variable `$i`)
+      (expr_int `0`)
+    )
+    (expr_binary `<`
+      (expr_variable `$i`)
+      (expr_variable `$c`)
+    )
+    (expr_unary `++`
+      (expr_variable `$i`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_for `for`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (expr_variable `$c`)
+    (expr_variable `$d`)
+    (expr_variable `$e`)
+    (expr_variable `$f`)
+    (stmt_block `{`)
+  )
+  (stmt_for `for`
+    (stmt_block `{`)
+  )
+  (stmt_for `for`
+    (stmt_block `:`)
+  )
+)

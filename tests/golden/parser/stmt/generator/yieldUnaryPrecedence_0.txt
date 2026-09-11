@@ -1,0 +1,28 @@
+(root `<?php`
+  (stmt_function `function` name=`gen`
+    (stmt_block `{`
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_unary `+`
+            (expr_int `1`)
+          )
+        )
+      )
+      (stmt_expression `yield`
+        (expr_yield `yield`
+          (expr_unary `-`
+            (expr_int `1`)
+          )
+        )
+      )
+      (stmt_expression `*`
+        (expr_binary `*`
+          (expr_yield `yield`)
+          (expr_unary `-`
+            (expr_int `1`)
+          )
+        )
+      )
+    )
+  )
+)

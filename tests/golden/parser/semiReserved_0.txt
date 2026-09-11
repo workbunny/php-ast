@@ -1,0 +1,150 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_method `function` name=`array`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`public`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`list`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`protected`
+      (stmt_block `{`)
+    )
+    (stmt_property `$class`
+      (property_item `$class`)
+    )
+    (stmt_property `$private`
+      (property_item `$private`)
+    )
+    (stmt_class_const `const` name=`TRAIT`
+      (const_decl `TRAIT`
+        (expr_int `3`)
+      )
+      (const_decl `FINAL`
+        (expr_int `4`)
+      )
+    )
+    (stmt_class_const `const` name=`__CLASS__`
+      (const_decl `__CLASS__`
+        (expr_int `1`)
+      )
+      (const_decl `__TRAIT__`
+        (expr_int `2`)
+      )
+      (const_decl `__FUNCTION__`
+        (expr_int `3`)
+      )
+      (const_decl `__METHOD__`
+        (expr_int `4`)
+      )
+      (const_decl `__LINE__`
+        (expr_int `5`)
+      )
+      (const_decl `__FILE__`
+        (expr_int `6`)
+      )
+      (const_decl `__DIR__`
+        (expr_int `7`)
+      )
+      (const_decl `__NAMESPACE__`
+        (expr_int `8`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$t`)
+      (expr_new `new`
+        (name `Test`)
+      )
+    )
+  )
+  (stmt_expression `$t`
+    (expr_method_call `$t`
+      (expr_property_fetch `$t`
+        (expr_variable `$t`)
+        (name `array`)
+      )
+    )
+  )
+  (stmt_expression `$t`
+    (expr_method_call `$t`
+      (expr_property_fetch `$t`
+        (expr_variable `$t`)
+        (name `public`)
+      )
+    )
+  )
+  (stmt_expression `Test`
+    (expr_static_call `Test`
+      (expr_const_fetch `Test`
+        (name `Test`)
+      )
+    )
+  )
+  (stmt_expression `Test`
+    (expr_static_call `Test`
+      (expr_const_fetch `Test`
+        (name `Test`)
+      )
+    )
+  )
+  (stmt_expression `$t`
+    (expr_property_fetch `$t`
+      (expr_variable `$t`)
+      (name `class`)
+    )
+  )
+  (stmt_expression `$t`
+    (expr_property_fetch `$t`
+      (expr_variable `$t`)
+      (name `private`)
+    )
+  )
+  (stmt_expression `Test`
+    (expr_class_const_fetch `Test`
+      (expr_const_fetch `Test`
+        (name `Test`)
+      )
+      (name `TRAIT`)
+    )
+  )
+  (stmt_expression `Test`
+    (expr_class_const_fetch `Test`
+      (expr_const_fetch `Test`
+        (name `Test`)
+      )
+      (name `FINAL`)
+    )
+  )
+  (stmt_class `class` name=`Foo`
+    (stmt_trait_use `use`
+      (name `TraitA`)
+      (name `TraitB`)
+      (trait_use_adaptation_precedence `catch`
+        (name `TraitA`)
+      )
+      (trait_use_adaptation_alias `list`
+        (name `TraitA`)
+      )
+      (trait_use_adaptation_alias `throw`
+        (name `TraitB`)
+      )
+      (trait_use_adaptation_alias `self`
+        (name `TraitB`)
+      )
+      (trait_use_adaptation_alias `exit`)
+      (trait_use_adaptation_alias `exit`
+        (name_fully_qualified `\TraitC`)
+      )
+      (trait_use_adaptation_alias `exit`
+        (name_relative `namespace\TraitC`)
+      )
+      (trait_use_adaptation_precedence `catch`
+        (name `TraitA`)
+      )
+    )
+  )
+)

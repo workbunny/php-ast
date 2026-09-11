@@ -1,0 +1,211 @@
+(root `<?php`
+  (stmt_function `function` name=`clone`
+    (param `$object`
+      (type_name `object`
+        (name `object`)
+      )
+    )
+    (param `$withProperties`
+      (type_name `array`
+        (name `array`)
+      )
+      (expr_array `[`)
+    )
+    (type_name `object`
+      (name `object`)
+    )
+    (stmt_block `{`)
+  )
+  (stmt_expression `clone`
+    (expr_clone `clone`
+      (expr_variable `$x`)
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+      (expr_argument `[`
+        (expr_array `[`
+          (expr_array_item `$foo`
+            (expr_variable `$foo`)
+            (expr_encapsed `"`
+              (expr_string_part `foo`)
+            )
+          )
+          (expr_array_item `$bar`
+            (expr_variable `$bar`)
+            (expr_encapsed `"`
+              (expr_string_part `bar`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+      (expr_argument `$array`
+        (expr_variable `$array`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+      (expr_argument `$array`
+        (expr_variable `$array`)
+      )
+      (expr_argument `$extraParameter`
+        (expr_variable `$extraParameter`)
+      )
+      (expr_argument `$trailingComma`
+        (expr_variable `$trailingComma`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `object`
+        (expr_variable `$x`)
+      )
+      (expr_argument `withProperties`
+        (expr_array `[`
+          (expr_array_item `$foo`
+            (expr_variable `$foo`)
+            (expr_encapsed `"`
+              (expr_string_part `foo`)
+            )
+          )
+          (expr_array_item `$bar`
+            (expr_variable `$bar`)
+            (expr_encapsed `"`
+              (expr_string_part `bar`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+      (expr_argument `withProperties`
+        (expr_array `[`
+          (expr_array_item `$foo`
+            (expr_variable `$foo`)
+            (expr_encapsed `"`
+              (expr_string_part `foo`)
+            )
+          )
+          (expr_array_item `$bar`
+            (expr_variable `$bar`)
+            (expr_encapsed `"`
+              (expr_string_part `bar`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `object`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `object`
+        (expr_variable `$x`)
+      )
+      (expr_argument `[`
+        (expr_array `[`
+          (expr_array_item `$foo`
+            (expr_variable `$foo`)
+            (expr_encapsed `"`
+              (expr_string_part `foo`)
+            )
+          )
+          (expr_array_item `$bar`
+            (expr_variable `$bar`)
+            (expr_encapsed `"`
+              (expr_string_part `bar`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_func_call `clone`
+      (name `clone`)
+      (expr_argument `[`
+        (expr_array `[`
+          (expr_array_item `$x`
+            (expr_variable `$x`)
+            (expr_encapsed `"`
+              (expr_string_part `object`)
+            )
+          )
+          (expr_array_item `[`
+            (expr_array `[`
+              (expr_array_item `$foo`
+                (expr_variable `$foo`)
+                (expr_encapsed `"`
+                  (expr_string_part `foo`)
+                )
+              )
+              (expr_array_item `$bar`
+                (expr_variable `$bar`)
+                (expr_encapsed `"`
+                  (expr_string_part `bar`)
+                )
+              )
+            )
+            (expr_encapsed `"`
+              (expr_string_part `withProperties`)
+            )
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `clone`
+    (expr_first_class_callable `clone`
+      (name `clone`)
+    )
+  )
+)

@@ -1,0 +1,23 @@
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_property `$a`
+      (property_item `$a`)
+    )
+    (stmt_property `$b`
+      (property_item `$b`)
+    )
+    (stmt_method `function` name=`c`)
+    (stmt_method `function` name=`d`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`e`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`f`
+      (stmt_block `{`)
+    )
+    (stmt_method `function` name=`g`
+      (stmt_block `{`)
+    )
+  )
+)

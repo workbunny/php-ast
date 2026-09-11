@@ -1,0 +1,121 @@
+(root `<?php`
+  (stmt_function `function` name=`a`
+    (attr_group `#`
+      (attribute `A1`
+        (name `A1`)
+      )
+      (attribute `A2`
+        (name `A2`)
+      )
+      (attribute `A3`
+        (name `A3`)
+        (expr_argument `0`
+          (expr_int `0`)
+        )
+      )
+      (attribute `A4`
+        (name `A4`)
+        (expr_argument `x`
+          (expr_int `1`)
+        )
+      )
+    )
+    (stmt_block `{`)
+  )
+  (stmt_class `class` name=`C`
+    (attr_group `#`
+      (attribute `A5`
+        (name `A5`)
+      )
+    )
+    (stmt_method `function` name=`m`
+      (attr_group `#`
+        (attribute `A6`
+          (name `A6`)
+        )
+      )
+      (param `$param`
+        (attr_group `#`
+          (attribute `A7`
+            (name `A7`)
+          )
+        )
+      )
+      (stmt_block `{`)
+    )
+    (stmt_property `$prop`
+      (property_item `$prop`)
+      (attr_group `#`
+        (attribute `A14`
+          (name `A14`)
+        )
+      )
+    )
+  )
+  (stmt_interface `interface` name=`I`
+    (attr_group `#`
+      (attribute `A8`
+        (name `A8`)
+      )
+    )
+  )
+  (stmt_trait `trait` name=`T`
+    (attr_group `#`
+      (attribute `A9`
+        (name `A9`)
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$x`)
+      (expr_closure `function`
+        (stmt_block `{`)
+        (attr_group `#`
+          (attribute `A10`
+            (name `A10`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$y`)
+      (expr_arrow_function `fn`
+        (expr_int `0`)
+        (attr_group `#`
+          (attribute `A11`
+            (name `A11`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_closure `function`
+        (stmt_block `{`)
+        (attr_group `#`
+          (attribute `A12`
+            (name `A12`)
+          )
+        )
+      )
+    )
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$b`)
+      (expr_arrow_function `fn`
+        (expr_int `0`)
+        (attr_group `#`
+          (attribute `A13`
+            (name `A13`)
+          )
+        )
+      )
+    )
+  )
+)

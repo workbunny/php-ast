@@ -1,0 +1,6 @@
+(root `<?php`
+  (stmt_nop `;`)
+  (stmt_namespace `namespace`
+    (name `Foo`)
+  )
+)

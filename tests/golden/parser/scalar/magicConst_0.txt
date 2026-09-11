@@ -1,0 +1,31 @@
+(root `<?php`
+  (stmt_expression `__CLASS__`
+    (expr_magic_const `__CLASS__`)
+  )
+  (stmt_expression `__DIR__`
+    (expr_magic_const `__DIR__`)
+  )
+  (stmt_expression `__FILE__`
+    (expr_magic_const `__FILE__`)
+  )
+  (stmt_expression `__FUNCTION__`
+    (expr_magic_const `__FUNCTION__`)
+  )
+  (stmt_expression `__LINE__`
+    (expr_magic_const `__LINE__`)
+  )
+  (stmt_expression `__METHOD__`
+    (expr_magic_const `__METHOD__`)
+  )
+  (stmt_expression `__NAMESPACE__`
+    (expr_magic_const `__NAMESPACE__`)
+  )
+  (stmt_expression `__TRAIT__`
+    (expr_magic_const `__TRAIT__`)
+  )
+  (stmt_expression `__PROPERTY__`
+    (expr_const_fetch `__PROPERTY__`
+      (name `__PROPERTY__`)
+    )
+  )
+)

@@ -1,0 +1,19 @@
+(root `<?php`
+  (stmt_switch `switch`
+    (expr_variable `$a`)
+    (stmt_switch_case `case`
+      (expr_int `0`)
+      (stmt_break `break`)
+    )
+    (stmt_switch_case `case`
+      (expr_int `1`)
+    )
+    (stmt_default `default`)
+  )
+  (stmt_switch `switch`
+    (expr_variable `$a`)
+  )
+  (stmt_switch `switch`
+    (expr_variable `$a`)
+  )
+)

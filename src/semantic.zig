@@ -29,6 +29,7 @@ const BASE_VERSION = version.BASE_VERSION;
 const stmt = @import("parser_stmt.zig");
 const decl = @import("parser_decl.zig");
 const parent_map = @import("parent_map.zig");
+const reserved = @import("reserved.zig");
 const testing = @import("testing.zig");
 
 const Node = ast.Node;
@@ -218,7 +219,7 @@ fn checkNode(self: *Checker, tree: *const ast.Ast, pm: *const parent_map.ParentM
         // use ... as self/parent/static：保留类名不能作别名。
         .use_use => {
             const c = tree.extraData(data.extra_and_node[0], stmt.UseUseComponents);
-            if (c.alias != 0 and isReservedWordText(tree, c.alias)) {
+            if (c.alias != 0 and reserved.isReservedClassName(tree.tokenSlice(c.alias))) {
                 // 消息含被导入原名（`token`）与别名（`aux`）：`Cannot use A as self
                 // because 'self' is a special class name`
                 // 区间为别名 token；`data` 携带被导入原名 token 供消息引用
@@ -280,17 +281,16 @@ fn isInsideBlock(tree: *const ast.Ast, pm: *const parent_map.ParentMap, node: In
     return false;
 }
 
-/// 声明名（类 / 接口 / 枚举 / trait 的名字 token）是否为保留字。
+/// 声明名（类 / 接口 / 枚举 / trait 的名字 token）是否为保留名。
 fn checkReservedDeclName(self: *Checker, tree: *const ast.Ast, tag: ast.Error.Tag, name_tok: TokenIndex) void {
-    if (isReservedWordText(tree, name_tok)) {
+    if (reserved.isReservedClassName(tree.tokenSlice(name_tok))) {
         self.add(tag, name_tok);
     }
 }
 
-/// 名字节点（extends / implements / interface extends 的子名）是否为保留字。
+/// 名字节点（extends / implements / interface extends 的子名）是否为保留名。
 fn checkReservedNameNode(self: *Checker, tree: *const ast.Ast, tag: ast.Error.Tag, name_node: Index) void {
-    const text = tree.tokenSlice(tree.nodeMainToken(name_node));
-    if (isReservedText(text)) {
+    if (reserved.isReservedClassName(tree.tokenSlice(tree.nodeMainToken(name_node)))) {
         self.add(tag, tree.nodeMainToken(name_node));
     }
 }
@@ -359,20 +359,10 @@ fn isParenthesizedOperand(tree: *const ast.Ast, node: Index) bool {
     return false;
 }
 
-/// 单个名字是否保留（self / parent / static，大小写不敏感）。
-fn isReservedText(text: []const u8) bool {
-    return std.ascii.eqlIgnoreCase(text, "self") or
-        std.ascii.eqlIgnoreCase(text, "parent") or
-        std.ascii.eqlIgnoreCase(text, "static");
-}
+/// 声明名位构成语法错的关键字（`class static {}` / `class ReadOnly {}`（8.0+））由 parse
+/// 层拒绝（`reserved.isForbiddenDeclName`），不会到达本层；本层只判 identifier 形态的
+/// 保留名（`self` / `parent` / `static`，见 `reserved.isReservedClassName`）。
 
-/// 声明名 token 是否为保留字：除 self/parent/static 外，`readonly` 自 PHP 8.0
-/// 起成为关键字、不可再作类名（7.x 下 `class ReadOnly` 合法）。
-fn isReservedWordText(tree: *const ast.Ast, tok: TokenIndex) bool {
-    const text = tree.tokenSlice(tok);
-    if (isReservedText(text)) return true;
-    return std.ascii.eqlIgnoreCase(text, "readonly") and tree.version.id >= 80000;
-}
 
 // ---------------------------------------------------------------------------
 // 判据二：namespace 顶层状态机
@@ -573,8 +563,8 @@ test "semantic :: 保留名 :: 类/接口名与继承/实现/别名" {
     try expectSemanticErrors(gpa, "<?php class A implements static {}", &.{.reserved_interface_name});
     try expectSemanticErrors(gpa, "<?php interface A extends PARENT {}", &.{.reserved_interface_name});
     try expectSemanticErrors(gpa, "<?php use A as self;", &.{.special_class_name_alias});
-    // readonly 作类名：8.0+ 保留
-    try expectSemanticErrors(gpa, "<?php class ReadOnly {}", &.{.reserved_class_name});
+    // `class ReadOnly {}`（8.0+）不在此列：名字位关键字是**语法错**，parse 层即拒绝、
+    // 不产节点，覆盖见 `parser_decl.zig` 的 `decl :: 声明名位关键字` 测试。
 }
 
 test "semantic :: halt :: 非最外层作用域" {

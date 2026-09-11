@@ -1,0 +1,8 @@
+(root `<?php`
+  (stmt_namespace `namespace`
+    (name `A`)
+  )
+  (stmt_echo `echo`
+    (expr_int `1`)
+  )
+)

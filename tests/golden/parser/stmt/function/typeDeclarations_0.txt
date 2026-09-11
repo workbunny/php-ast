@@ -1,0 +1,21 @@
+(root `<?php`
+  (stmt_function `function` name=`a`
+    (param `$b`)
+    (param `$c`
+      (type_name `array`
+        (name `array`)
+      )
+    )
+    (param `$d`
+      (type_name `callable`
+        (name `callable`)
+      )
+    )
+    (param `$f`
+      (type_name `E`
+        (name `E`)
+      )
+    )
+    (stmt_block `{`)
+  )
+)

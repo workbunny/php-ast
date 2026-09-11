@@ -1,0 +1,31 @@
+(root `<?php`
+  (stmt_class `class` name=`Test`
+    (stmt_property `$a`
+      (property_item `$a`)
+    )
+    (stmt_property `$b`
+      (property_item `$b`)
+    )
+    (stmt_property `$c`
+      (property_item `$c`)
+    )
+    (stmt_method `function` name=`__construct`
+      (param `$d`
+        (type_name `set`
+          (name `set`)
+        )
+      )
+      (param `$e`
+        (type_name `set`
+          (name `set`)
+        )
+      )
+      (param `$f`
+        (type_name `set`
+          (name `set`)
+        )
+      )
+      (stmt_block `{`)
+    )
+  )
+)

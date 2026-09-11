@@ -1,0 +1,10 @@
+(root `<?php`
+  (stmt_block `{`
+    (stmt_block `{`
+      (stmt_expression `$a`
+        (expr_variable `$a`)
+      )
+    )
+  )
+  (stmt_block `{`)
+)

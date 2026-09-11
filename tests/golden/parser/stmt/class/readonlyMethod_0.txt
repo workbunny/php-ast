@@ -1,0 +1,9 @@
+; 1 条诊断
+;   Method foo() cannot be readonly from 1:17 to 1:24
+(root `<?php`
+  (stmt_class `class` name=`A`
+    (stmt_method `function` name=`foo`
+      (stmt_block `{`)
+    )
+  )
+)

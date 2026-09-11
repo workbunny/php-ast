@@ -1,0 +1,16 @@
+(root `<?php`
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_variable `$a`)
+      (expr_variable `$b`)
+    )
+  )
+  (stmt_expression `isset`
+    (expr_isset `isset`
+      (expr_binary `+`
+        (expr_int `1`)
+        (expr_int `1`)
+      )
+    )
+  )
+)

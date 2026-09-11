@@ -1,0 +1,16 @@
+; 1 条诊断
+;   Syntax error, unexpected T_STRING, expecting ',' or ']' or ')' from 2:11 to 2:15
+(root `<?php`
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_array `[`
+        (expr_array_item `"`
+          (expr_encapsed `"`
+            (expr_string_part `a `)
+          )
+        )
+      )
+    )
+  )
+)

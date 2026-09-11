@@ -1,0 +1,49 @@
+(root `<?php`
+  (stmt_if `if`
+    (expr_variable `$a`)
+    (stmt_expression `$A`
+      (expr_variable `$A`)
+    )
+    (stmt_if `elseif`
+      (expr_variable `$b`)
+      (stmt_expression `$B`
+        (expr_variable `$B`)
+      )
+      (stmt_expression `$C`
+        (expr_variable `$C`)
+      )
+    )
+  )
+  (stmt_for `for`
+    (stmt_expression `$foo`
+      (expr_variable `$foo`)
+    )
+  )
+  (stmt_foreach `foreach`
+    (expr_variable `$a`)
+    (expr_variable `$b`)
+    (stmt_expression `$AB`
+      (expr_variable `$AB`)
+    )
+  )
+  (stmt_while `while`
+    (expr_variable `$a`)
+    (stmt_expression `$A`
+      (expr_variable `$A`)
+    )
+  )
+  (stmt_do `do`
+    (stmt_expression `$A`
+      (expr_variable `$A`)
+    )
+    (expr_variable `$a`)
+  )
+  (stmt_declare `declare`
+    (stmt_expression `$C`
+      (expr_variable `$C`)
+    )
+    (declare_declare `a`
+      (expr_string `'b'`)
+    )
+  )
+)

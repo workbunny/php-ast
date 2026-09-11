@@ -1,0 +1,7 @@
+; 1 条诊断
+;   Syntax error, unexpected '}', expecting T_STRING or T_VARIABLE or '{' or '$' from 4:1 to 4:1
+(root `<?php`
+  (stmt_function `function` name=`foo`
+    (stmt_block `{`)
+  )
+)

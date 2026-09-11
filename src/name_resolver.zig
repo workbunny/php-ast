@@ -27,6 +27,7 @@ const Index = ast.Index;
 const TokenIndex = ast.TokenIndex;
 const stmt = @import("parser_stmt.zig");
 const walk = @import("walk.zig");
+const reserved = @import("reserved.zig");
 
 /// use/别名的类别，对应 php-parser `Stmt\Use_::TYPE_*`。
 pub const Kind = enum(u8) { class, function, constant };
@@ -139,14 +140,12 @@ const Ctx = struct {
     fn implResolve(self: *Ctx, kind: Kind, text: []const u8, strict: bool) ![]const u8 {
         const gpa = self.gpa;
         if (kind == .class) {
-            if (std.mem.eql(u8, text, "self") or std.mem.eql(u8, text, "parent") or std.mem.eql(u8, text, "static")) {
-                return gpa.dupe(u8, text);
-            }
+            // 特殊类名 self/parent/static：保留不解析（判定忽略大小写，与 PHP 一致）
+            if (reserved.isReservedClassName(text)) return gpa.dupe(u8, text);
         }
         if (kind == .constant) {
-            if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false") or std.mem.eql(u8, text, "null")) {
-                return gpa.dupe(u8, text);
-            }
+            // 保留常量 true/false/null：保留不解析
+            if (reserved.isReservedConstName(text)) return gpa.dupe(u8, text);
         }
 
         const m = &self.aliases[kindIdx(kind)];

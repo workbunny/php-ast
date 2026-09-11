@@ -8,7 +8,7 @@
 //! 后者跑：
 //!
 //! ```bash
-//! zig build test -- --update-golden
+//! zig build test -Dupdate-golden
 //! ```
 //!
 //! 更新后必须 `git diff` 复核，确认改动符合预期再提交——否则快照测试会退化成
@@ -41,15 +41,30 @@ test "golden :: 全部 fixture 与快照一致" {
     };
     defer dir.close(io);
 
-    var checked: usize = 0;
+    // 先收集全部 fixture 相对路径再逐个处理：`-Dupdate-golden` 会写快照文件，
+    // 边遍历边写会破坏目录迭代（Windows 上尤其明显）。排序使顺序与文件系统无关，
+    // 差异定位更稳定。
+    var rels: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (rels.items) |p| gpa.free(p);
+        rels.deinit(gpa);
+    }
     var walker = try dir.walk(gpa);
     defer walker.deinit();
-
     while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".php")) continue;
+        try rels.append(gpa, try gpa.dupe(u8, entry.path));
+    }
+    std.mem.sort([]const u8, rels.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lt);
 
-        const php_path = try std.fs.path.join(gpa, &.{ GOLDEN_DIR, entry.path });
+    var checked: usize = 0;
+    for (rels.items) |rel| {
+        const php_path = try std.fs.path.join(gpa, &.{ GOLDEN_DIR, rel });
         defer gpa.free(php_path);
         const txt_path = try std.fmt.allocPrint(gpa, "{s}.txt", .{php_path[0 .. php_path.len - 4]});
         defer gpa.free(txt_path);
