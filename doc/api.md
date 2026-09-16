@@ -183,6 +183,21 @@ pub fn listSlice(tree: Ast, range: ListRange, comptime T: type) []const T
   字段类型为 `Index/OptionalIndex/Token/ExtraIndex/u32/bool/SubRange`，调用方**无需手写偏移**。
 - `extraDataSlice` / `listSlice`：把 `extra_data` 的一段区间重解释为 `T` 切片（元素均为 `u32` 大小）。
 
+**取用纪律**（自行解 `extra_data` 前先读）：
+- 优先用高层 API（`nodeData` / `forEachChild` / `walk` / `nameToken`），它们已封装好子引用的取出。
+- 确需自行取用时：区间端点**左闭右开**，空区间以 `start == end` 表示「无」（此时不要取元素）；
+  `extraData` 传入的 `T` 必须与**产生该段的那个 `Components` 类型**一致，类型不符会静默解出错值。
+- `Components` 定义在 `src/parser_*.zig`，**不在本库导出面内**；`ListRange` 段元素恒为 `Index`，
+  这是下游可直接使用的形态。
+- 自行取用意味着自担跟随成本：0.x 阶段 `extra_data` 布局可变（见 [compat.md](compat.md)），
+  本库不承诺其形态稳定。实现者侧约束见 [dev.md](dev.md) 第 5 节。
+- **写入侧不可用**：`addExtra` / `addNodeList` / `addIndexList` / `emptyRange` / `emptySubRange`
+  是 `Parser` 的方法，不在本库导出面内——下游无法用它们拼装 AST。当前本库只提供解析，
+  程序化构建尚未提供。
+- **字段编解码属实现细节**：`ast.encodeExtraField` / `ast.decodeExtraField` /
+  `ast.extraFieldSlots` 虽可从 `php_ast.ast` 命名空间访问，但它们服务于大板的读写对齐，
+  不属稳定 API。
+
 ```zig
 // 取函数声明体的子节点（Components 模式，伪代码示意真实字段名）
 const c = tree.extraData(tree.nodeData(func).extra_and_opt_node[0], FunctionComponents);

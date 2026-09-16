@@ -268,7 +268,48 @@ std.debug.print("{s}", .{buf.written()});
   注释写明，避免后人误改。
 - 注释写"为什么"（取舍、隐含契约、踩过的坑），不写 What；仓库语言为中文。
 
-## 5. 许可证与出处
+## 5. extra_data 契约
+
+`extra_data`（`u32` 大板）是 AST 的序列化负载区。契约靠**文档 + 测试**维护，不设运行期校验：
+0.x 阶段布局可变，且违反契约的后果是**静默解出错值**——槽位都是 `u32`，读错片段不会报错。
+约束分两侧。
+
+### 5.1 实现者（本库）
+
+**写侧接口**（`Parser` 的方法，**库内部**——`Parser` 不在 `root.zig` 导出面内，下游拿不到）：
+
+| 接口 | 签名 | 用法 / 适用范围 |
+|---|---|---|
+| `addExtra` | `fn (p: *Parser, extra: anytype) ParseError!ExtraIndex` | 写一个 `Components` 负载。**直接子引用超过 2 个、或需可选字段随节点走时用它**；字段按 `std.meta.fields` 顺序序列化，`SubRange` 占 2 槽。返回段起点，存进节点的 `data` 的 `extra` / `extra_*` 槽。 |
+| `addNodeList` | `fn (p: *Parser, list: []const Index) ParseError!ListRange` | 写一串**节点**下标（子节点列表）。空列表合法，返回零长区间（`start == end`），读侧按 `len == 0` 判空。 |
+| `addIndexList` | `fn (p: *Parser, comptime T: type, list: []const T) ParseError!ListRange` | 写一串**下标句柄**，`T` 限 `u32` 宽枚举（`Index` / `ExtraIndex`）。用于非节点序列——闭包 `use` 列表存的是各项的 `ExtraIndex`（指向其 `ClosureUseComponents`）。 |
+| `emptyRange` | `fn (p: *Parser) ListRange` | 造零长 `ListRange`：**不追加槽**，只指向当前大板末尾。 |
+| `emptySubRange` | `fn (p: *Parser) SubRange` | 同上，`SubRange` 版。用于「无此部分」的字段（无属性组、无 catch 等）。 |
+
+**读侧接口**（`Ast` 的方法，**在导出面内**，下游可用）：`extraData` / `extraDataSlice` / `listSlice`，用法见 `doc/api.md`。
+
+**范围与边界**：这几个入口**只负责进出大板**——不做边界断言、不做类型校验。越界由 Zig 运行时兜底，类型或顺序不符则**静默给出错值**（契约即为此而立）。`emptyRange` / `emptySubRange` 不占槽，多个空区间可能共享同一对端点值，故不能靠区间值区分「是哪个空段」（也无需区分）。
+
+| # | 契约 |
+|---|---|
+| 1 | 写读都只经统一入口：写为 `addExtra`（`Components`）、`addNodeList` / `addIndexList`（裸下标列表）、`emptyRange` / `emptySubRange`（空区间）；读为 `extraData` / `extraDataSlice` / `listSlice`。**除上述封装函数的实现内部外，不得手写 `extra_data` 下标。** |
+| 2 | 同一段必须用**同一个 `Components` 类型**读、写：写端按 `std.meta.fields` 顺序序列化，读端按同序还原。 |
+| 3 | 字段类型白名单是**单一事实来源**：`ast.encodeExtraField` / `ast.decodeExtraField`，写读共用一处。新增字段类型只改这里。 |
+| 4 | 槽宽：逻辑字段 1 槽，`SubRange` 2 槽，`bool` 存 0/1。 |
+| 5 | 区间端点**左闭右开**；空区间用 `start == end`；`emptyRange` 只指向大板末尾，不追加槽。 |
+| 6 | 裸列表段（`addNodeList`）**无类型标记**，元素恒为 `Index`，读端须自带类型知识。 |
+
+**覆盖纪律**：改动 extra 的构造或读取逻辑时，回归测试按**路径**判定，而非按 tag——同一 tag
+若有多条构造路径（空/非空列表、有/无可选字段、失败回退），**每条都要有能走到的用例**（单元
+测试或 golden）。覆盖矩阵（`coverage.zig`）只保证「每个 tag 出现一次」，不保证路径完备。
+
+**禁止**：为某个具体 tag 写「它应该有 N 个槽 / N 个子节点」的假设断言——语法演进会让它误报。
+
+### 5.2 下游
+
+取用纪律见 `doc/api.md` 的 `extraData` / `extraDataSlice` / `listSlice` 一节。
+
+## 6. 许可证与出处
 
 `tests/golden/parser/**` 的 PHP 源码衍生自 PHP-Parser 的测试用例（BSD 3-Clause，
 Copyright (c) 2011, Nikita Popov）。该许可的三项义务落到本仓库：

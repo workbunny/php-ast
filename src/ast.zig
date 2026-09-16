@@ -78,6 +78,37 @@ pub const ListRange = struct {
     end: ExtraIndex,
 };
 
+/// `extra_data` 槽宽：`SubRange` 占 2 槽，其余逻辑字段各占 1 槽。
+pub fn extraFieldSlots(comptime T: type) usize {
+    return if (T == SubRange) 2 else 1;
+}
+
+/// 把单个逻辑字段编码为 `extra_data` 槽位（未占用的槽为 0）。
+///
+/// 与 `decodeExtraField` 互为逆运算，二者构成**唯一的字段类型白名单**：
+/// `parser.addExtra` 的写入与 `Ast.extraData` 的读取都经此处，不再各维护一份同构
+/// 分派——两份漂移时读端会静默错位，且编译期无感。
+pub fn encodeExtraField(comptime T: type, v: T) [2]u32 {
+    return switch (T) {
+        Index, OptionalIndex, OptionalTokenIndex, ExtraIndex => .{ @intFromEnum(v), 0 },
+        bool => .{ @intFromBool(v), 0 },
+        u32 => .{ v, 0 },
+        SubRange => .{ @intFromEnum(v.start), @intFromEnum(v.end) },
+        else => @compileError("unsupported extra field type: " ++ @typeName(T)),
+    };
+}
+
+/// `encodeExtraField` 的逆运算。`raw` 由调用方按 `extraFieldSlots(T)` 取足槽位。
+pub fn decodeExtraField(comptime T: type, raw: [2]u32) T {
+    return switch (T) {
+        Index, OptionalIndex, OptionalTokenIndex, ExtraIndex => @enumFromInt(raw[0]),
+        bool => raw[0] != 0,
+        u32 => raw[0],
+        SubRange => .{ .start = @enumFromInt(raw[0]), .end = @enumFromInt(raw[1]) },
+        else => @compileError("unsupported extra field type: " ++ @typeName(T)),
+    };
+}
+
 /// 一条诊断信息（解析错误）。错误不立即中止解析，而是累计后随 AST 一并返回
 /// （多错误收集，便于编辑器/lint 一次取得全部诊断）。
 pub const Error = struct {
@@ -774,31 +805,16 @@ pub const Ast = struct {
     }
 
     /// 从 `extra_data[index]` 按字段顺序反序列化一段 `Components` 负载。
-    /// 各字段按其类型原样存为 `u32`（枚举/下标取枚举值，`bool` 取 0/1），
     /// 读取时按同序还原，调用方无需手写偏移。
     pub fn extraData(tree: Ast, index: ExtraIndex, comptime T: type) T {
         var result: T = undefined;
         var slot: usize = @intFromEnum(index);
         inline for (std.meta.fields(T)) |field| {
-            @field(result, field.name) = switch (field.type) {
-                Index,
-                OptionalIndex,
-                OptionalTokenIndex,
-                ExtraIndex,
-                => @enumFromInt(tree.extra_data[slot]),
-                u32,
-                => tree.extra_data[slot],
-                bool => tree.extra_data[slot] != 0,
-                SubRange => .{
-                    .start = @enumFromInt(tree.extra_data[slot]),
-                    .end = @enumFromInt(tree.extra_data[slot + 1]),
-                },
-                else => @compileError("unsupported extra field type: " ++ @typeName(field.type)),
-            };
-            slot += switch (field.type) {
-                SubRange => 2,
-                else => 1,
-            };
+            const slots = extraFieldSlots(field.type);
+            var raw = [2]u32{ tree.extra_data[slot], 0 };
+            if (slots == 2) raw[1] = tree.extra_data[slot + 1];
+            @field(result, field.name) = decodeExtraField(field.type, raw);
+            slot += slots;
         }
         return result;
     }
@@ -1218,18 +1234,18 @@ pub const Ast = struct {
             => tree.extraData(data.extra_and_opt_node[0], decl.TypeDeclComponents).name,
             .stmt_property => blk: {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.PropertyComponents);
-                if (c.props.start == c.props.end) break :blk null;
-                // props 为 addNodeList 连续节点，首项即 property_item：名字在其 opt_node_and_token[1]
-                const first_item: Index = @enumFromInt(tree.extra_data[@intFromEnum(c.props.start)]);
-                break :blk tree.nodeData(first_item).opt_node_and_token[1];
+                const props = tree.extraDataSlice(.{ .start = c.props.start, .end = c.props.end }, Index);
+                if (props.len == 0) break :blk null;
+                // props 首项即 property_item：名字在其 opt_node_and_token[1]
+                break :blk tree.nodeData(props[0]).opt_node_and_token[1];
             },
             .property_item => data.opt_node_and_token[1],
             .stmt_class_const => blk: {
                 const c = tree.extraData(data.extra_and_opt_node[0], decl.ClassConstComponents);
-                if (c.decls.start == c.decls.end) break :blk null;
-                // decls 区间内存的是节点下标（addNodeList 连续写入），首项即 const_decl。
-                const first_item: Index = @enumFromInt(tree.extra_data[@intFromEnum(c.decls.start)]);
-                break :blk tree.nodeData(first_item).node_and_token[1];
+                const decls = tree.extraDataSlice(.{ .start = c.decls.start, .end = c.decls.end }, Index);
+                if (decls.len == 0) break :blk null;
+                // decls 首项即 const_decl
+                break :blk tree.nodeData(decls[0]).node_and_token[1];
             },
             .stmt_case => tree.extraData(data.extra_and_opt_node[0], decl.CaseComponents).name,
             .const_decl, .declare_declare => data.node_and_token[1],

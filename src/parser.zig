@@ -44,39 +44,34 @@ pub const Parser = struct {
     }
 
     /// 把一个 `Components` 负载序列化进 `extra_data`，返回起点下标。
-    /// 字段顺序与 `Ast.extraData` 的反序列化顺序严格对齐。
+    /// 字段顺序与 `Ast.extraData` 的反序列化顺序严格对齐，字段类型白名单同源于
+    /// `ast.encodeExtraField`（单一事实来源，避免两端各维护一份而同构漂移）。
     pub fn addExtra(p: *Parser, extra: anytype) ast.ParseError!ExtraIndex {
         const result = @as(ExtraIndex, @enumFromInt(p.extra_data.items.len));
         inline for (std.meta.fields(@TypeOf(extra))) |field| {
-            const v = @field(extra, field.name);
             const T = field.type;
-            if (T == SubRange) {
-                try p.extra_data.append(p.gpa, @intFromEnum(v.start));
-                try p.extra_data.append(p.gpa, @intFromEnum(v.end));
-                continue;
+            const encoded = ast.encodeExtraField(T, @field(extra, field.name));
+            for (encoded[0..ast.extraFieldSlots(T)]) |slot| {
+                try p.extra_data.append(p.gpa, slot);
             }
-            try p.extra_data.append(p.gpa, switch (T) {
-                Index,
-                OptionalIndex,
-                ast.OptionalTokenIndex,
-                ExtraIndex,
-                => @intFromEnum(v),
-                bool => @intFromBool(v),
-                u32 => v,
-                else => @compileError("unsupported extra field type: " ++ @typeName(T)),
-            });
         }
         return result;
     }
 
     /// 把一组 `Index` 写入 `extra_data`，返回其 `ListRange`。
     pub fn addNodeList(p: *Parser, list: []const Index) ast.ParseError!ListRange {
+        return p.addIndexList(Index, list);
+    }
+
+    /// 把一组下标句柄写入 `extra_data`，返回其区间。
+    /// 大板只存原始值，故元素类型可泛化到任意 `u32` 宽枚举——闭包 `use` 列表存的是
+    /// `ExtraIndex` 序列（指向各项的 `ClosureUseComponents`），与节点列表同构不同型。
+    pub fn addIndexList(p: *Parser, comptime T: type, list: []const T) ast.ParseError!ListRange {
         const start: ExtraIndex = @enumFromInt(p.extra_data.items.len);
         for (list) |item| {
             try p.extra_data.append(p.gpa, @intFromEnum(item));
         }
-        const end: ExtraIndex = @enumFromInt(p.extra_data.items.len);
-        return .{ .start = start, .end = end };
+        return .{ .start = start, .end = @enumFromInt(p.extra_data.items.len) };
     }
 
     /// 在 `extra_data` 末尾占一个空区间（start == end）。

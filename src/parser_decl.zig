@@ -1091,10 +1091,7 @@ pub fn parseAttrGroups(p: *Parser) ast.ParseError!SubRange {
         var attrs = try std.ArrayList(Index).initCapacity(p.gpa, 0);
         defer attrs.deinit(p.gpa);
         while (p.tokTag() != .rbracket and p.tokTag() != .eof) {
-            const name = (try expr.parseName(p)) orelse {
-                const e: ExtraIndex = @enumFromInt(p.extra_data.items.len);
-                return .{ .start = e, .end = e };
-            };
+            const name = (try expr.parseName(p)) orelse return p.emptySubRange();
             var args: ListRange = p.emptyRange();
             if (p.tokTag() == .lparen) {
                 args = try expr.parseArgs(p);
@@ -1118,10 +1115,7 @@ pub fn parseAttrGroups(p: *Parser) ast.ParseError!SubRange {
         })) orelse unreachable;
         try groups.append(p.gpa, group);
     }
-    if (groups.items.len == 0) {
-        const e: ExtraIndex = @enumFromInt(p.extra_data.items.len);
-        return .{ .start = e, .end = e };
-    }
+    if (groups.items.len == 0) return p.emptySubRange();
     const lr = try p.addNodeList(groups.items);
     return .{ .start = lr.start, .end = lr.end };
 }
@@ -1398,6 +1392,19 @@ test "decl :: 属性挂点 :: 函数/枚举 case/类常量" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
     try testing.expectTagCounts(tree, .{ .attr_group = 3, .attribute = 3, .param = 1 });
+}
+
+test "decl :: 属性组 :: 空组 :: 零长列表区间" {
+    const gpa = std.testing.allocator;
+    // 空组走 `addNodeList(空)`：attr_group 的 `extra_range` 为零长（start == end），
+    // 与「有属性」路径共用同一 tag，仅靠区间长度区分。
+    var tree = try ast.Ast.parse(gpa,
+        \\<?php
+        \\class C { #[] public $x; }
+        \\
+    , testing.v84);
+    defer tree.deinit(gpa);
+    try testing.expectTagCounts(tree, .{ .attr_group = 1, .attribute = 0, .stmt_class = 1 });
 }
 
 test "decl :: 属性钩子 :: get/set 各自成节点" {

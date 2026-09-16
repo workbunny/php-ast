@@ -1579,11 +1579,8 @@ fn parseClosure(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         }
         _ = p.expectToken(.rparen);
         if (ulist.items.len > 0) {
-            const start_e = p.extra_data.items.len;
-            for (ulist.items) |ei| {
-                try p.extra_data.append(p.gpa, @intFromEnum(ei));
-            }
-            uses = .{ .start = @enumFromInt(start_e), .end = @enumFromInt(p.extra_data.items.len) };
+            const lr = try p.addIndexList(ExtraIndex, ulist.items);
+            uses = .{ .start = lr.start, .end = lr.end };
         }
     }
     var ret: OptionalIndex = .none;

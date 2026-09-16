@@ -5,6 +5,29 @@ php-ast 的显著变更记录。格式参考 [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-16
+
+### 新增
+
+- `doc/dev.md` 第 5 节「`extra_data` 契约」：写/读两侧的接口一览（签名与适用范围）、六条契约、
+  覆盖纪律（按**路径**而非 tag 判定）与禁止项（不得为某个 tag 假设槽数或子节点数）。
+- `doc/api.md` 的下游取用纪律：区间左闭右开、空区间语义、`T` 须与产生该段的 `Components`
+  一致，并说明写入侧不在导出面内。
+
+### 变更
+
+- `extra_data` 的字段类型白名单收敛为**单一来源**：`ast.encodeExtraField` / `ast.decodeExtraField`
+  / `ast.extraFieldSlots`，`Parser.addExtra` 与 `Ast.extraData` 共用一处（原先写读各有一份同构分派）。
+- 新增通用写入口 `Parser.addIndexList`（元素为 `u32` 宽句柄枚举），`addNodeList` 转发给它；
+  闭包 `use` 列表改经它写入，不再手写大板下标。
+- 绕过封装直接读写 `extra_data` 下标的位置全部收敛到统一入口（写侧 3 处、读侧 2 处）。
+- 单元测试补充：属性组空组 `#[]` 的零长列表区间构造路径。
+
+### 破坏性变更
+
+无。`ast` 命名空间下新增的三个字段编解码函数与 `Parser.addIndexList` 均为纯新增；
+解析输出与既有快照逐字节一致，用例数 230 → 231 全绿。
+
 ## [0.6.1] - 2026-09-16
 
 ### 新增
