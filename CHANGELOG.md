@@ -28,6 +28,8 @@ php-ast 的显著变更记录。格式参考 [Keep a Changelog](https://keepacha
 - 关键字大小写不敏感改在词法阶段落实：`ReadOnly` 与 `readonly` 切成同一 tag，诊断显示名
   不再回判源码文本。
 - `enum` / `readonly` 的生效版本（PHP 8.1）计入判定，目标版本为 8.0 时它们仍可作名字。
+- `.gitattributes` 为 `tests/golden/**` 补 `-text`：语料是逐字节契约，`scalar/docStringNewlines`
+  等 fixture 故意混用 CRLF/LF，此前被 `* text=auto eol=lf` 在检出时归一化，导致 CI 快照不匹配。
 
 ### 变更
 

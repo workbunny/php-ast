@@ -5,6 +5,12 @@
 # 格式门禁（CI 的 fmt job 与本地 `zig fmt --check`）就会对每个文件误报。
 * text=auto eol=lf
 
+# golden 语料与快照是**逐字节契约**：解析输入的行尾参与语义（`scalar/docStringNewlines`
+# 故意混用 CRLF/LF 验证 docString 处理），快照按字节记录期望。任何行尾归一化都会让
+# 检出结果与生成快照时不一致——本地工作区未被动过时是绿的，CI 检出后立刻快照不匹配。
+# 用 `-text` 而非 `binary` 宏：只关行尾转换，仍保留文本 diff。
+tests/golden/** -text
+
 # 二进制产物：不参与文本归一化与文本 diff
 *.so  binary
 *.dll binary
