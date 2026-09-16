@@ -318,8 +318,9 @@ test "coverage :: operators 表内多字符运算符优先于单字符" {
     defer slice.deinit(gpa);
 
     const want = [_]Token.Tag{
-        .open_tag, .equal_equal_equal, .bang_equal_equal,
-        .double_asterisk_equal, .left_shift_equal, .right_shift_equal, .eof,
+        .open_tag,              .equal_equal_equal, .bang_equal_equal,
+        .double_asterisk_equal, .left_shift_equal,  .right_shift_equal,
+        .eof,
     };
     try std.testing.expectEqual(want.len, slice.items(.tag).len);
     for (want, slice.items(.tag)) |w, got| {

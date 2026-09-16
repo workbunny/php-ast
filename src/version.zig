@@ -51,4 +51,3 @@ test "version :: BASE_VERSION :: id 为 0 且小于任何合法版本" {
     try std.testing.expectEqual(@as(u32, 0), BASE_VERSION.id);
     try std.testing.expect(!BASE_VERSION.newerOrEqual(PhpVersion.fromComponents(8, 0)));
 }
-

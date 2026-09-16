@@ -12,6 +12,7 @@ const ExtraIndex = ast.ExtraIndex;
 const TokenIndex = ast.TokenIndex;
 
 const expr = @import("parser_expr.zig");
+const reserved = @import("reserved.zig");
 const testing = @import("testing.zig");
 
 /// 泛型类型 `Foo<int>` / `list<int>` / `array<int, int>`：承载基础类型与类型实参列表。
@@ -22,8 +23,9 @@ pub const GenericTypeComponents = struct {
 
 pub fn isTypeStart(p: *Parser) bool {
     return switch (p.tokTag()) {
-        .question, .lparen, .backslash, .kw_namespace, .identifier, .kw_true, .kw_false, .kw_null, .kw_static, .kw_list, .kw_array => true,
-        else => false,
+        .question, .lparen, .backslash, .kw_namespace, .kw_true, .kw_false, .kw_null, .kw_static, .kw_list, .kw_array => true,
+        // 名字形态的类型（含「拼写为关键字但目标版本尚未生效」的类名，如 8.0 下的 `ReadOnly`）
+        else => reserved.isNameToken(p.tokTag(), p.version),
     };
 }
 
@@ -122,7 +124,7 @@ fn parseTypeBase(p: *Parser) ast.ParseError!?Index {
         const name = (try p.addNode(.{ .tag = .name, .main_token = tok, .data = .{ .token = tok } })) orelse unreachable;
         return (try p.addNode(.{ .tag = .type_name, .main_token = tok, .data = .{ .node = name } })) orelse unreachable;
     }
-    if (t == .identifier or t == .backslash or t == .kw_namespace or t == .kw_list or t == .kw_array) {
+    if (reserved.isNameToken(t, p.version) or t == .backslash or t == .kw_namespace or t == .kw_list or t == .kw_array) {
         // 伪类型 self / parent：直接记为专用节点，与 PHP-Parser 的 Type\Self_/Parent_ 对齐。
         if (t == .identifier) {
             if (p.isSoftKw("self")) {

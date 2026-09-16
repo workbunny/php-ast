@@ -1,0 +1,79 @@
+; 9 条诊断
+;   Syntax error, unexpected ']' from 5:7 to 5:7
+;   Syntax error, unexpected ',' from 5:8 to 5:8
+;   Syntax error, unexpected ')' from 5:12 to 5:12
+;   Syntax error, unexpected '}' from 6:7 to 6:7
+;   Syntax error, unexpected ',' from 6:8 to 6:8
+;   Syntax error, unexpected ')' from 6:12 to 6:12
+;   Syntax error, unexpected ';' from 7:5 to 7:5
+;   Syntax error, unexpected ')' from 7:9 to 7:9
+;   Syntax error, unexpected ',' from 8:11 to 8:11
+(root `<?php`
+  (stmt_expression `f`
+    (expr_func_call `f`
+      (name `f`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_error `]`)
+  (stmt_error `,`)
+  (stmt_expression `$y`
+    (expr_variable `$y`)
+  )
+  (stmt_expression `f`
+    (expr_func_call `f`
+      (name `f`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_error `,`)
+  (stmt_expression `$y`
+    (expr_variable `$y`)
+  )
+  (stmt_expression `f`
+    (expr_func_call `f`
+      (name `f`)
+      (expr_argument `$x`
+        (expr_variable `$x`)
+      )
+    )
+  )
+  (stmt_expression `$y`
+    (expr_variable `$y`)
+  )
+  (stmt_expression `=`
+    (expr_assign `=`
+      (expr_variable `$a`)
+      (expr_array `[`
+        (expr_array_item `1`
+          (expr_int `1`)
+        )
+      )
+    )
+  )
+  (stmt_group_use `use`
+    (name `A`)
+    (use_use `B`
+      (name `B`)
+    )
+  )
+  (stmt_expression `f`
+    (expr_func_call `f`
+      (name `f`)
+      (expr_argument `[`
+        (expr_array `[`
+          (expr_array_item `1`
+            (expr_int `1`)
+          )
+          (expr_array_item `2`
+            (expr_int `2`)
+          )
+        )
+      )
+    )
+  )
+)

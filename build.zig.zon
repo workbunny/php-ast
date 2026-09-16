@@ -1,6 +1,6 @@
 .{
     .name = .php_ast,
-    .version = "0.6.0",
+    .version = "0.6.1",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0xe570435e50377fea,
     .paths = .{
@@ -10,6 +10,7 @@
         "LICENSES",
         "NOTICE.md",
         "README.md",
+        "CHANGELOG.md",
         "doc",
         "src",
         "tools",

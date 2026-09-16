@@ -217,11 +217,11 @@ pub const Token = struct {
         .{ .t = "const", .tag = .kw_const },
         .{ .t = "abstract", .tag = .kw_abstract },
         .{ .t = "final", .tag = .kw_final },
-        .{ .t = "enum", .tag = .kw_enum },
+        .{ .t = "enum", .tag = .kw_enum, .since = 80100 },
         .{ .t = "interface", .tag = .kw_interface },
         .{ .t = "trait", .tag = .kw_trait },
         .{ .t = "match", .tag = .kw_match },
-        .{ .t = "readonly", .tag = .kw_readonly },
+        .{ .t = "readonly", .tag = .kw_readonly, .since = 80100 },
         .{ .t = "default", .tag = .kw_default },
         .{ .t = "instanceof", .tag = .kw_instanceof },
         .{ .t = "and", .tag = .kw_and },
@@ -342,7 +342,19 @@ pub const Token = struct {
     pub const Mapping = struct {
         t: []const u8,
         tag: Tag,
+        /// 关键字生效版本（`major * 10000 + minor * 100`）。0 = 本库基线（8.0）之前即为
+        /// 关键字；较晚引入者（`enum` / `readonly` 为 8.1）据此豁免旧目标版本下的
+        /// 「该词此刻仍是普通标识符」判定（见 `reserved.isForbiddenDeclName`）。
+        since: u32 = 0,
     };
+
+    /// 关键字的生效版本；非关键字返回 0（视作基线之前即生效）。
+    pub fn keywordSince(tag: Tag) u32 {
+        for (keywords) |k| {
+            if (k.tag == tag) return k.since;
+        }
+        return 0;
+    }
 
     /// 把关键字文本映射到 `Tag`，非关键字返回 `null`。
     pub fn keywordTag(t: []const u8) ?Tag {
@@ -353,9 +365,8 @@ pub const Token = struct {
     }
 
     /// 同 `keywordTag`，但**忽略大小写**。PHP 关键字大小写不敏感（`Class` / `STATIC`
-    /// / `ReadOnly` 与全小写等价），词法器为保持「文本片段即源码」的零拷贝语义仍按
-    /// 原样切片，需要「该标识符是否是关键字」判断的场合（诊断显示名、声明名位禁用
-    /// 判定）走此函数回判。
+    /// / `ReadOnly` 与全小写等价），词法器用此函数切 tag；源码切片仍指向原文，零拷贝
+    /// 语义不受影响。
     pub fn keywordTagIgnoreCase(t: []const u8) ?Tag {
         for (keywords) |k| {
             if (std.ascii.eqlIgnoreCase(k.t, t)) return k.tag;

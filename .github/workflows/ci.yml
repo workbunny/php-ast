@@ -1,0 +1,126 @@
+# CI：格式校验、单元测试 + 黄金快照、符合性对照门禁。
+#
+# 两个设计约束：
+# - 零第三方 action（只用官方 checkout）：Zig 经 `.github/actions/setup-zig` 以官方
+#   发行包 + sha256 安装，与本地 0.16.0 严格对齐。
+# - 防「假绿」：`zig build conformance` 在缺 `--php-parser` 时**成功退出**（为下游
+#   clone 不为缺参照而失败的设计）。若照抄到 CI，参照路径给错、clone 失败都会判绿。
+#   故此处补参照就绪与报告扫描量的前置断言，测试数也设下界（防「0 用例通过」）。
+#   断言取**下界**而非精确值：上游补用例、本地加测试不误报，整段被删仍会红。
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: 格式校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      # 只校验不代改：格式化在本地完成，CI 负责阻止未格式化的代码入库。
+      - name: zig fmt --check
+        run: zig fmt --check build.zig src tools
+
+  test:
+    name: 单元测试 + 黄金快照
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+      - name: zig build test（含黄金快照比对）
+        run: |
+          set -o pipefail
+          zig build test --summary all 2>&1 | tee /tmp/test.log
+      - name: 断言用例数
+        run: |
+          set -eu
+          MIN_TESTS=200
+          summary=$(grep -oE '[0-9]+/[0-9]+ tests passed' /tmp/test.log | tail -1 || true)
+          if [ -z "$summary" ]; then
+            echo "::error::未找到测试汇总行，构建可能被跳过或输出格式已变更"
+            tail -40 /tmp/test.log
+            exit 1
+          fi
+          ratio=${summary%% *}
+          passed=${ratio%%/*}
+          total=${ratio##*/}
+          echo "用例数: $passed/$total（下界 $MIN_TESTS）"
+          [ "$passed" -ge "$MIN_TESTS" ] || {
+            echo "::error::用例数 $passed 低于下界 $MIN_TESTS，疑有整段被删或未执行"
+            exit 1
+          }
+
+  conformance:
+    name: 符合性对照 + 门禁
+    runs-on: ubuntu-latest
+    env:
+      # 参照固定到 tag，与本地 reference/PHP-Parser-full-5.8.0 同源。不跟 master：
+      # 上游一改语法用例，门禁数字就会漂移。
+      REF_TAG: v5.8.0
+      REF_DIR: /tmp/php-parser
+      MIN_SUITES: "178"
+      MIN_SEGMENTS: "278"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-zig
+
+      - name: 取参照实现
+        run: git clone --depth 1 --branch "$REF_TAG" https://github.com/nikic/PHP-Parser.git "$REF_DIR"
+
+      - name: 前置断言：参照就绪
+        run: |
+          set -eu
+          PARSER_DIR="$REF_DIR/test/code/parser"
+          [ -d "$PARSER_DIR" ] || { echo "::error::参照目录不存在: $PARSER_DIR"; exit 1; }
+          suites=$(find "$PARSER_DIR" -name '*.test' | wc -l | tr -d ' ')
+          echo "参照 .test 文件数: $suites（下界 $MIN_SUITES）"
+          [ "$suites" -ge "$MIN_SUITES" ] || { echo "::error::参照 .test 数 $suites < 下界 $MIN_SUITES"; exit 1; }
+
+      - name: 符合性对照 + 门禁
+        run: zig build conformance -- --php-parser "$REF_DIR"
+
+      # 门禁失败时该步仍执行：区分「参照给错导致空扫」与「真实差异超白名单」。
+      # 用 python 读 UTF-8 报告：中文锚点若经 shell 传参会因编码损坏而失配。
+      - name: 断言报告扫描量
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          REPORT = "zig-out/conformance/acceptance_report.txt"
+          MIN_SUITES = int(os.environ["MIN_SUITES"])
+          MIN_SEGMENTS = int(os.environ["MIN_SEGMENTS"])
+          try:
+              text = open(REPORT, encoding="utf-8").read()
+          except OSError as e:
+              print(f"::error::读不到 {REPORT}: {e}")
+              raise SystemExit(1)
+          m = re.search(r"\.test (\d+) 个，配对代码段 (\d+)", text)
+          if m is None:
+              print(f"::error::{REPORT} 中未找到统计行，格式可能已变更")
+              raise SystemExit(1)
+          suites, segments = int(m.group(1)), int(m.group(2))
+          print(f"报告口径: .test={suites} 配对段={segments}（下界 {MIN_SUITES} / {MIN_SEGMENTS}）")
+          if suites < MIN_SUITES or segments < MIN_SEGMENTS:
+              print(f"::error::扫描量缩水：.test={suites} 配对段={segments}，参照或路径有问题")
+              raise SystemExit(1)
+          PY
+
+      - name: 失败时打印报告
+        if: failure()
+        run: |
+          for f in zig-out/conformance/*.txt; do
+            echo "===== $f ====="
+            head -60 "$f"
+          done

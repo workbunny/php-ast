@@ -162,13 +162,9 @@ pub const Error = struct {
         const text = tree.tokenSlice(tok);
         return switch (tag) {
             .eof => "EOF",
-            // 词法器按源码原样切片（大小写敏感），但 PHP 关键字大小写不敏感：
-            // `ReadOnly` / `Static` 在 php-parser 是 T_READONLY / T_STATIC 而非
-            // T_STRING，故此处回判——文本命中关键字则按关键字名显示。
-            .identifier => if (Token.keywordTagIgnoreCase(text)) |k|
-                (keywordDisplayName(k, out) orelse "T_STRING")
-            else
-                "T_STRING",
+            // 词法器已按忽略大小写切关键字 tag（`ReadOnly` 与 `readonly` 同类），
+            // 故此处只剩真正的标识符。
+            .identifier => "T_STRING",
             .variable => "T_VARIABLE",
             // 完全限定名的前导 `\`：php-parser 把 `\Foo\Bar` 整体作一个
             // T_NAME_FULLY_QUALIFIED token，故显示名按名类给出（本库词法把 `\`
@@ -219,7 +215,8 @@ pub const Error = struct {
         if (self.tag == .unsupported_version) {
             const r = self.required;
             const t = tree.version;
-            return std.fmt.bufPrint(buf,
+            return std.fmt.bufPrint(
+                buf,
                 "node syntax requires PHP {}.{} but target is {}.{}",
                 .{
                     r.id / 10000,
@@ -261,9 +258,16 @@ pub const Error = struct {
         return switch (self.tag) {
             // ---- 语法类：`Syntax error, unexpected <token>`（php-parser 报在意外
             // token 上；`self.token` 即该 token）。----
-            .expected_token, .expected_semi, .expected_expr, .expected_variable,
-            .expected_identifier, .expected_lbrace, .expected_rbrace, .expected_rparen,
-            .expected_lbracket, .unexpected_eof,
+            .expected_token,
+            .expected_semi,
+            .expected_expr,
+            .expected_variable,
+            .expected_identifier,
+            .expected_lbrace,
+            .expected_rbrace,
+            .expected_rparen,
+            .expected_lbracket,
+            .unexpected_eof,
             => blk: {
                 // token 显示名先用独立缓冲渲染（不能与 bufPrint 的目标共用 buf）
                 var nbuf: [64]u8 = undefined;
@@ -1633,7 +1637,6 @@ fn checkHeredocIndent(
     }
 }
 
-
 /// 在已有 token 切片上执行递归下降解析（私有，外部走 `parse`）。
 /// `tokens` 移入返回的 `Ast`；临时 `nodes`/`extra_data`/`errors` 由 `defer` 释放，
 /// 失败时 `errdefer` 兜底。
@@ -1760,6 +1763,14 @@ test "ast :: nodeVersion :: 标记节点引入版本" {
         try testing.expectNoErrors(t);
         try expectFirstNodeVersion(t, .expr_new, 80400);
     }
+    {
+        // 带构造参数的链式同为 8.4：判据是「后随链 token」这一语法事实，
+        // 按 args 是否为空推断会漏标本条（args 非空）。
+        var t = try Ast.parse(gpa, "<?php $z = new Baz(1)->m();", testing.v84);
+        defer t.deinit(gpa);
+        try testing.expectNoErrors(t);
+        try expectFirstNodeVersion(t, .expr_new, 80400);
+    }
 }
 
 /// 词法/解码诊断条数（`lexScanDiag` 产出的那些 tag）。
@@ -1767,10 +1778,7 @@ fn countLexErrors(tree: Ast) usize {
     var n: usize = 0;
     for (tree.errors) |e| {
         switch (e.tag) {
-            .lex_error, .unterminated_comment, .unexpected_character,
-            .unexpected_null_byte, .invalid_numeric_literal, .invalid_numeric_separator,
-            .invalid_indentation_mixed, .invalid_indentation_level,
-            .short_echo_identifier, .invalid_utf8_codepoint => n += 1,
+            .lex_error, .unterminated_comment, .unexpected_character, .unexpected_null_byte, .invalid_numeric_literal, .invalid_numeric_separator, .invalid_indentation_mixed, .invalid_indentation_level, .short_echo_identifier, .invalid_utf8_codepoint => n += 1,
             else => {},
         }
     }
@@ -1928,7 +1936,7 @@ test "ast :: tokenSlice :: 节点主 token 可回切源码原文" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
-    const lit = testing.firstNode(tree,.expr_int) orelse return error.TestUnexpectedResult;
+    const lit = testing.firstNode(tree, .expr_int) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("42", tree.tokenSlice(tree.nodeMainToken(lit)));
 }
 
@@ -2154,7 +2162,7 @@ test "ast :: tokenLocation :: 计算行列位置" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
-    const lit = testing.firstNode(tree,.expr_int) orelse return error.TestUnexpectedResult;
+    const lit = testing.firstNode(tree, .expr_int) orelse return error.TestUnexpectedResult;
     const loc = tree.tokenLocation(0, tree.nodeMainToken(lit));
     // 第 2 行（0 起算），即源码中的 `$a = 1;`
     try std.testing.expectEqual(@as(usize, 1), loc.line);
@@ -2170,7 +2178,7 @@ test "ast :: docCommentBefore :: 取回声明前的 docblock" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
-    const fn_node = testing.firstNode(tree,.stmt_function) orelse return error.TestUnexpectedResult;
+    const fn_node = testing.firstNode(tree, .stmt_function) orelse return error.TestUnexpectedResult;
     const doc = tree.docCommentBefore(fn_node) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(.doc_comment, tree.tokenTag(doc));
 }
@@ -2182,5 +2190,3 @@ test "ast :: tagVersion :: 基础语法返回 BASE_VERSION" {
     try std.testing.expectEqual(@as(u32, 80400), tagVersion(.property_hook).id);
     try std.testing.expectEqual(@as(u32, 80500), tagVersion(.expr_pipe).id);
 }
-
-

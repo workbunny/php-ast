@@ -27,7 +27,7 @@ pub const Lexer = struct {
     /// 判断标识符文本是否为 PHP 魔术常量（大小写不敏感）。
     fn isMagicConst(t: []const u8) bool {
         const names = [_][]const u8{
-            "__line__", "__file__", "__dir__", "__function__",
+            "__line__",  "__file__",   "__dir__",   "__function__",
             "__class__", "__method__", "__trait__", "__namespace__",
         };
         var lower: [64]u8 = undefined;
@@ -354,7 +354,8 @@ pub const Lexer = struct {
                 }
                 const tag: Token.Tag = if (i + 2 < n and source[i + 1] == '*' and source[i + 2] == '*')
                     .doc_comment
-                else .comment;
+                else
+                    .comment;
                 const end = if (closed) e + 2 else n;
                 try out.append(gpa, .{ .tag = tag, .start = i, .end = end });
                 i = end - 1;
@@ -448,8 +449,7 @@ pub const Lexer = struct {
                             fn l(ch: u8, hex: bool, bin: bool) bool {
                                 return if (hex)
                                     isDigitChar(ch) or (ch >= 'a' and ch <= 'f') or (ch >= 'A' and ch <= 'F')
-                                else if (bin) ch == '0' or ch == '1'
-                                else ch >= '0' and ch <= '7'; // 八进制
+                                else if (bin) ch == '0' or ch == '1' else ch >= '0' and ch <= '7'; // 八进制
                             }
                         }.l;
                         const t = e + 1;
@@ -572,7 +572,10 @@ pub const Lexer = struct {
                 while (e < n and isIdentChar(source[e])) : (e += 1) {}
                 const text = source[i..e];
                 const tag = blk: {
-                    if (Token.keywordTag(text)) |k| break :blk k;
+                    // PHP 关键字大小写不敏感（`Class` / `STATIC` 与全小写等价），故按忽略
+                    // 大小写匹配；源码切片仍指向原文，零拷贝语义不受影响。词法器不感知目标
+                    // 版本，故「版本尚未生效的关键字」由 `reserved.isNameToken` 在名字位放行。
+                    if (Token.keywordTagIgnoreCase(text)) |k| break :blk k;
                     if (isMagicConst(text)) break :blk .magic_const;
                     break :blk .identifier;
                 };
@@ -694,11 +697,10 @@ test "lexer :: 运算符 :: 算术/比较/赋值/复合赋值" {
     var t = try tokenizeTags(gpa, "<?php $a + - * / % . == != === <> < > <= >= << >> ** & | ^ ??;");
     defer t.deinit(gpa);
     for ([_]Token.Tag{
-        .plus,    .minus,        .asterisk,     .slash,     .percent, .dot,
-        .equal_equal, .bang_equal, .equal_equal_equal,
-        .less_than, .greater_than, .less_equal, .greater_equal,
-        .left_shift, .right_shift, .double_asterisk,
-        .ampersand, .pipe, .caret, .null_coalesce,
+        .plus,          .minus,         .asterisk,          .slash,           .percent,      .dot,
+        .equal_equal,   .bang_equal,    .equal_equal_equal, .less_than,       .greater_than, .less_equal,
+        .greater_equal, .left_shift,    .right_shift,       .double_asterisk, .ampersand,    .pipe,
+        .caret,         .null_coalesce,
     }) |want| {
         if (!hasTag(t.items, want)) {
             std.debug.print("\n词法缺失 token: {s}\n", .{@tagName(want)});

@@ -293,8 +293,8 @@ pub fn parseStatement(p: *Parser) ast.ParseError!?Index {
             return parseStatement(p);
         },
         else => {
-            // 标签：`identifier :`，仅当其后紧跟冒号时成立。
-            if (p.tokTag() == .identifier and p.tok_i + 1 < p.tokens.len and
+            // 标签：`名字 :`，仅当其后紧跟冒号时成立（名字含版本未生效的关键字拼写）。
+            if (reserved.isNameToken(p.tokTag(), p.version) and p.tok_i + 1 < p.tokens.len and
                 p.tokens.items(.tag)[p.tok_i + 1] == .colon)
             {
                 return parseLabel(p);
@@ -994,7 +994,7 @@ pub fn parseUse(p: *Parser) ast.ParseError!?Index {
                 var end = start;
                 var k = start;
                 const tags = p.tokens.items(.tag);
-                while (k < tags.len and (tags[k] == .backslash or tags[k] == .identifier)) : (k += 1) end = k;
+                while (k < tags.len and (tags[k] == .backslash or reserved.isNameToken(tags[k], p.version))) : (k += 1) end = k;
                 p.addErrorExpected(ast.Error.Tag.expected_token, .use_name, start, end, start, 0);
             }
             const name = (try expr.parseName(p)) orelse break;
@@ -1076,7 +1076,7 @@ fn buildUseUse(p: *Parser, name: Index, kind: u32) !?Index {
     var alias: TokenIndex = 0;
     if (p.tokTag() == .kw_as) {
         _ = p.nextToken();
-        if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+        if (reserved.isForbiddenDeclName(p.tokTag(), p.version)) {
             p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
             return null;
         }

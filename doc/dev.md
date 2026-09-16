@@ -178,6 +178,24 @@ zig build conformance -- --php-parser <PHP-Parser 仓库根或 test/code/parser>
 > 处理。注意本表是"表示差异"，与接受/拒绝无关；**拒绝面的差异**（本库该报错却没报）
 > 归入接受面报告的「漏报」节核对，不在上表。
 
+### 2.5 内存 / 分配测量（tools/measure）
+
+`measure` 把解析包在统计型 allocator 里，报告每个输入的**分配次数**、**累计分配字节**、
+**峰值驻留**与**解析后驻留**（AST 实占，取 `deinit` 前——此刻临时缓冲已释放）：
+
+```sh
+zig build measure                      # 扫 tests/golden/**，按峰值列前 10 + 合计
+zig build measure -- --all             # 全部逐条列出
+zig build measure -- <file.php>...     # 只测指定文件
+```
+
+定位：`test` 判对错、`conformance` 对齐参照，本工具**只出数字**——用于观察解析的内存
+开销（`峰值 − 驻留 ≈ 临时缓冲`）并为优化留基线。**不对速度作结论**：那需要与参照实现
+同机的稳定基准，属另一件事。
+
+取值建议配 `-Doptimize=ReleaseFast`：Debug 下的内联与分配策略与发布构建不同，绝对值
+只在**同一模式内**横向可比（跨模式比较无意义）。
+
 ## 3. 调试方法
 
 ### 3.1 收集式错误定位

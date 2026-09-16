@@ -168,6 +168,13 @@ pub fn parseFunction(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
         _ = p.nextToken();
         by_ref = true;
     }
+    // 函数名位（php.y `fn_identifier`）：只接受 T_STRING 与 readonly / exit / clone；
+    // `function list() {}` 一类 semi_reserved 关键字是语法错（方法名位才允许，
+    // 见 `parseMethod`）。缺名时不消费 token，交给外层恢复。
+    if (!reserved.isFnIdentifier(p.tokTag(), p.version)) {
+        p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
+        return null;
+    }
     const name_tok = p.nextToken();
     const plr = (try parseParamList(p)) orelse return null;
     var ret: OptionalIndex = .none;
@@ -214,9 +221,18 @@ pub fn parseParam(p: *Parser) ast.ParseError!?Index {
     var is_final_promoted = false;
     while (true) {
         switch (p.tokTag()) {
-            .kw_public => { promoted = 1; _ = p.nextToken(); },
-            .kw_protected => { promoted = 2; _ = p.nextToken(); },
-            .kw_private => { promoted = 3; _ = p.nextToken(); },
+            .kw_public => {
+                promoted = 1;
+                _ = p.nextToken();
+            },
+            .kw_protected => {
+                promoted = 2;
+                _ = p.nextToken();
+            },
+            .kw_private => {
+                promoted = 3;
+                _ = p.nextToken();
+            },
             .kw_readonly => {
                 flags |= 32;
                 _ = p.nextToken();
@@ -299,7 +315,7 @@ pub fn parseClass(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
     const flags = parseModifiers(p);
     const kw = p.nextToken();
     // 类名位只接受 T_STRING（php.y）：关键字（`class static {}`）是语法错，不产类节点。
-    if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+    if (reserved.isForbiddenDeclName(p.tokTag(), p.version)) {
         p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
         return null;
     }
@@ -520,14 +536,38 @@ fn parseModifiers(p: *Parser) u32 {
     var flags: u32 = 0;
     while (true) {
         switch (p.tokTag()) {
-            .kw_abstract => { flags |= 1; _ = p.nextToken(); },
-            .kw_final => { flags |= 2; _ = p.nextToken(); },
-            .kw_static => { flags |= 4; _ = p.nextToken(); },
-            .kw_readonly => { flags |= 8; _ = p.nextToken(); },
+            .kw_abstract => {
+                flags |= 1;
+                _ = p.nextToken();
+            },
+            .kw_final => {
+                flags |= 2;
+                _ = p.nextToken();
+            },
+            .kw_static => {
+                flags |= 4;
+                _ = p.nextToken();
+            },
+            .kw_readonly => {
+                flags |= 8;
+                _ = p.nextToken();
+            },
             .kw_public, .kw_protected, .kw_private, .kw_var, .kw_const => _ = p.nextToken(),
             else => return flags,
         }
     }
+}
+
+/// `(` 之后是否为 `set`（非对称可见性 `public(set)`）。不消费 token：用于把
+/// `public (A&B)|C $p;` 的类型括号与 `public(set) $p;` 的 set 括号区分开。
+fn isSetVisibility(p: *Parser) bool {
+    if (p.tokTag() != .lparen) return false;
+    const next = p.tok_i + 1;
+    if (next >= p.tokens.len) return false;
+    if (p.tokens.items(.tag)[next] != .identifier) return false;
+    const s = p.tokens.items(.start)[next];
+    const e = p.tokens.items(.end)[next];
+    return std.mem.eql(u8, p.source[s..e], "set");
 }
 
 /// 收集属性修饰符与可见性，支持 PHP 8.4 非对称可见性 `public(private)`。
@@ -578,32 +618,25 @@ fn parsePropertyModifiers(p: *Parser) PropertyMods {
                 };
                 const vtok = p.tok_i;
                 _ = p.nextToken();
-                if (p.tokTag() == .lparen) {
-                    // `vis(set)`：非对称可见性的 set 侧。首个可见性亦可带
-                    // （`private(set) $x`——此时无普通可见性侧）。
+                // `vis(set)`（8.4 非对称可见性）：仅当 `(` 后确为 `set` 才消费该括号；
+                // 否则这个 `(` 属类型位（DNF 类型 `(A&B)|C` 的起始）——按普通可见性收下，
+                // 游标留在 `(` 交类型解析。**不得回卷到可见性 token 本身**：修饰符收集已
+                // 结束，上层会再次见到 `public` 并按「缺少属性名」报错（DNF 属性被误拒）。
+                if (isSetVisibility(p)) {
                     const lp = p.tok_i;
-                    _ = p.nextToken();
-                    if (p.isSoftKw("set")) {
-                        _ = p.nextToken();
-                        const rp = p.eatToken(.rparen) orelse lp;
-                        if (res.set_seen) {
-                            // set 侧已出现过：`private(set) private(set)` /
-                            // `private(set) public(set)` 为重复修饰符，区间覆盖
-                            // 整个重复的修饰符（含 `(set)`）。
-                            p.addError(ast.Error.Tag.multiple_access_modifiers, vtok, rp, vtok, 0);
-                        } else {
-                            res.set_seen = true;
-                            // 高字节写入 set 侧可见性（默认 3 = 未指定），
-                            // 使「无 set/有 set」可区分（set_vis != 3 即非对称）。
-                            res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
-                        }
+                    _ = p.nextToken(); // `(`
+                    _ = p.nextToken(); // `set`
+                    const rp = p.eatToken(.rparen) orelse lp;
+                    if (res.set_seen) {
+                        // set 侧已出现过：`private(set) private(set)` /
+                        // `private(set) public(set)` 为重复修饰符，区间覆盖
+                        // 整个重复的修饰符（含 `(set)`）。
+                        p.addError(ast.Error.Tag.multiple_access_modifiers, vtok, rp, vtok, 0);
                     } else {
-                        // `(` 之后不是 `set`：是 DNF 类型 `(A&B)` 或语法错。回卷该
-                        // 可见性 token（连 `(`）交给类型解析；第二个可见性则本身
-                        // 即重复（`public int` 形态不在此列，vis_count 为 0）。
-                        p.tok_i = vtok;
-                        if (vis_count > 0) p.warnAt(ast.Error.Tag.multiple_access_modifiers, vtok);
-                        return res;
+                        res.set_seen = true;
+                        // 高字节写入 set 侧可见性（默认 3 = 未指定），
+                        // 使「无 set/有 set」可区分（set_vis != 3 即非对称）。
+                        res.visibility = (res.visibility & 0xFF) | (@as(u32, v) << 8);
                     }
                 } else if (vis_count == 0) {
                     res.visibility |= v;
@@ -743,8 +776,14 @@ pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
     var vis_count: u8 = 0;
     while (true) {
         switch (p.tokTag()) {
-            .kw_final => { flags |= 4; _ = p.nextToken(); },
-            .ampersand => { flags |= 16; _ = p.nextToken(); },
+            .kw_final => {
+                flags |= 4;
+                _ = p.nextToken();
+            },
+            .ampersand => {
+                flags |= 16;
+                _ = p.nextToken();
+            },
             .kw_abstract => {
                 // abstract 在钩子上非法（php-parser：`Cannot use the abstract
                 // modifier on a property hook`）——仅 final 与 & 合法。
@@ -849,23 +888,39 @@ pub fn parsePropertyHook(p: *Parser) ast.ParseError!?Index {
 
 /// 解析类常量（Stmt\ClassConst）：`[可见性] const NAME[: type] = value;`，支持 PHP 8.3 类型。
 /// 与属性节点（stmt_property）区分，对齐 php-parser 的 `Stmt\ClassConst`。
+/// `const` 之后是否为 **typed** class const（`const <type> NAME = ...`）的有界前瞻。
+///
+/// 只读 token、不改游标：从当前位置扫到第一个 `=`（或 `;` / `,` / eof）为止，区间内
+/// 出现两个及以上名字 token（类型名 + 常量名）才算带类型；无类型形态在第一个名字后
+/// 紧跟 `=`，只会数到一个。扫描有上限，畸形输入不会扫穿全文。
+///
+/// 判据只看 token 形态，不靠 parseType 的成败——后者对「名字」输入必然成功（把常量名
+/// 当成单名类型吃掉），那正是原「试探后回卷」方案的歧义来源。
+fn looksLikeTypedClassConst(p: *Parser) bool {
+    const tags = p.tokens.items(.tag);
+    var names: usize = 0;
+    var i = p.tok_i;
+    const stop = @min(i + 64, tags.len);
+    while (i < stop) : (i += 1) {
+        switch (tags[i]) {
+            .eof, .equals, .semicolon, .comma => break,
+            .identifier => names += 1,
+            else => if (tags[i].isKeyword()) {
+                names += 1;
+            },
+        }
+    }
+    return names >= 2;
+}
+
 pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseError!?Index {
     const kw = p.nextToken();
     var type_opt: OptionalIndex = .none;
-    // PHP 8.3 typed class const：`const int X = 1`（类型在名字前）。与名字形式的歧义
-    // （`const A = 1`）靠试探消解：parseType 成功后其下一位必须是「常量名 + `=`」
-    // 才算带类型，否则回卷按无类型解析。`const A = 1` 的 A 会被 parseType 当单名类型
-    // 吃掉，但其后是 `=`（非名字）→ 回卷。`const int X = 1`：int 后是名字 X + `=` → 采纳。
-    const save0 = p.tok_i;
-    if (types.isTypeStart(p)) {
-        const ty = try types.parseType(p);
-        if (ty == null) {
-            p.tok_i = save0;
-        } else if (expr.isNamePart(p.tokTag()) and p.tokens.items(.tag)[p.tok_i + 1] == .equals) {
-            type_opt = OptionalIndex.fromIndex(ty.?);
-        } else {
-            p.tok_i = save0;
-        }
+    // PHP 8.3 typed class const：`const int X = 1`（类型在名字前），与无类型形态
+    // （`const A = 1`）由前瞻区分（见 `looksLikeTypedClassConst`）：确认类型位之后还有
+    // 常量名才走类型解析，不做「先解析、不符再回卷」。
+    if (types.isTypeStart(p) and looksLikeTypedClassConst(p)) {
+        if (try types.parseType(p)) |ty| type_opt = OptionalIndex.fromIndex(ty);
     }
     // 常量列表：`const NAME = value, NAME2 = value2;`（每项 const_decl，与顶层 const 同构）。
     var decls = try std.ArrayList(Index).initCapacity(p.gpa, 0);
@@ -909,7 +964,12 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
         .main_token = kw,
         .data = .{ .extra_and_opt_node = .{ extra, type_opt } },
     })) orelse unreachable;
-    // 常量上的注解（含 #[\Deprecated]）为 8.5 引入
+    // typed class const（`const int X = 1`）为 8.3 引入；无类型形态是基础语法，同 tag
+    // 承载两版本，故在解析点标注而非 `tagVersion` 表。
+    if (type_opt != .none) {
+        p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, 3);
+    }
+    // 常量上的注解（含 #[\Deprecated]）为 8.5 引入（晚于 typed，覆盖上面的标注）
     if (attrs.start != attrs.end) {
         p.node_versions.items[@intFromEnum(node)] = PhpVersion.fromComponents(8, 5);
     }
@@ -920,7 +980,7 @@ pub fn parseClassConst(p: *Parser, attrs: SubRange, visibility: u32) ast.ParseEr
 pub fn parseTypeDecl(p: *Parser, comptime tag: Node.Tag, attrs: SubRange) ast.ParseError!?Index {
     const kw = p.nextToken();
     // 名字位只接受 T_STRING（同 parseClass）：`interface static {}` 是语法错。
-    if (reserved.isForbiddenDeclName(p.tokTag(), p.tokSlice(), p.version)) {
+    if (reserved.isForbiddenDeclName(p.tokTag(), p.version)) {
         p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
         return null;
     }
@@ -1483,4 +1543,131 @@ test "decl :: Deprecated 属性 :: 作为普通属性解析" {
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
     try testing.expectTagCounts(tree, .{ .attribute = 1 });
+}
+
+test "decl :: 声明名位 :: 关键字作声明名是语法错（identifier_not_reserved 只接受 T_STRING）" {
+    const gpa = std.testing.allocator;
+
+    // 声明名位（类 / 接口 / trait / enum 名、`use ... as` 别名）全部关键字均禁，
+    // 半保留集合（`static` / `list` 等）不豁免——此前只覆盖 `static` / `readonly`。
+    const cases = [_][:0]const u8{
+        "<?php class list {}",
+        "<?php class if {}",
+        "<?php interface list {}",
+        "<?php trait static {}",
+        "<?php use C as for;",
+    };
+    for (cases) |src| {
+        var tree = try ast.Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try std.testing.expect(tree.errors.len > 0);
+    }
+
+    // `enum` / `readonly` 自 8.1 起才是关键字：8.0 目标下该位仍是普通标识符
+    var t80 = try ast.Ast.parse(gpa, "<?php class readonly {}", testing.v80);
+    defer t80.deinit(gpa);
+    try testing.expectNoErrors(t80);
+
+    var t81 = try ast.Ast.parse(gpa, "<?php class readonly {}", testing.v81);
+    defer t81.deinit(gpa);
+    try std.testing.expect(t81.errors.len > 0);
+}
+
+test "decl :: typed class const :: 前瞻区分类型位与常量名" {
+    const gpa = std.testing.allocator;
+
+    // 带类型（8.3）：类型位之后仍有常量名，故前瞻判定为 typed
+    const typed = [_][:0]const u8{
+        "<?php class C { const int X = 1; }",
+        "<?php class C { const ?A B = 1; }",
+        "<?php class C { const (A&B)|C D = 1; }",
+        "<?php class C { const A\\B X = 1; }",
+        "<?php class C { public const array L = []; }",
+    };
+    for (typed) |src| {
+        var tree = try ast.Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try testing.expectNoErrors(tree);
+        try testing.expectTagCounts(tree, .{ .stmt_class_const = 1, .const_decl = 1 });
+    }
+
+    // 无类型：首个名字后紧接 `=`，前瞻数不到第二个名字（多声明亦逐项如此）
+    var plain = try ast.Ast.parse(gpa, "<?php class C { const A = 1, B = 2; }", testing.v84);
+    defer plain.deinit(gpa);
+    try testing.expectNoErrors(plain);
+    try testing.expectTagCounts(plain, .{ .stmt_class_const = 1, .const_decl = 2 });
+
+    // 版本：typed 形态为 8.3 引入（同 tag 的另一形态是基础语法，故不得整体门控）
+    var v82 = try ast.Ast.parse(gpa, "<?php class C { const int X = 1; }", testing.v82);
+    defer v82.deinit(gpa);
+    try std.testing.expect(v82.errors.len > 0);
+
+    var v83 = try ast.Ast.parse(gpa, "<?php class C { const int X = 1; }", testing.v83);
+    defer v83.deinit(gpa);
+    try testing.expectNoErrors(v83);
+
+    var plain80 = try ast.Ast.parse(gpa, "<?php class C { const A = 1; }", testing.v80);
+    defer plain80.deinit(gpa);
+    try testing.expectNoErrors(plain80);
+}
+
+test "decl :: 名字位的关键字集合 :: 顶层函数名收窄到 fn_identifier" {
+    const gpa = std.testing.allocator;
+
+    // php.y `fn_identifier`：T_STRING 加 readonly / exit / die / clone / fn 特例
+    const ok_fn = [_][:0]const u8{
+        "<?php function readonly() {}",
+        "<?php function exit() {}",
+        "<?php function die() {}",
+        "<?php function clone() {}",
+        "<?php function fn() {}",
+    };
+    for (ok_fn) |src| {
+        var tree = try ast.Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try testing.expectNoErrors(tree);
+        try testing.expectTagCounts(tree, .{ .stmt_function = 1 });
+    }
+
+    // 其余关键字（含 semi_reserved 成员）作顶层函数名是语法错
+    const bad_fn = [_][:0]const u8{
+        "<?php function list() {}",
+        "<?php function class() {}",
+    };
+    for (bad_fn) |src| {
+        var tree = try ast.Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try std.testing.expect(tree.errors.len > 0);
+    }
+
+    // 方法名位（identifier_maybe_reserved）接受 semi_reserved——与上面的对照
+    var m = try ast.Ast.parse(gpa, "<?php class C { public function list() {} }", testing.v84);
+    defer m.deinit(gpa);
+    try testing.expectNoErrors(m);
+    try testing.expectTagCounts(m, .{ .stmt_method = 1 });
+}
+
+test "decl :: 属性 DNF 类型 :: 可见性后的 `(` 属类型位而非非对称可见性" {
+    const gpa = std.testing.allocator;
+
+    // 可见性后紧跟 `(`：该括号是 DNF 类型的交集括号。此前被 `(set)` 判定吞掉并回卷到
+    // 可见性 token，使整条属性类型丢失（3 条误报）。
+    var both = try ast.Ast.parse(gpa, "<?php class C { public (A&B)|(X&Y) $p; }", testing.v84);
+    defer both.deinit(gpa);
+    try testing.expectNoErrors(both);
+    try testing.expectTagCounts(both, .{ .stmt_property = 1, .type_union = 1, .type_intersection = 2 });
+
+    var right_name = try ast.Ast.parse(gpa, "<?php class C { public (A&B)|C $p; }", testing.v84);
+    defer right_name.deinit(gpa);
+    try testing.expectNoErrors(right_name);
+    try testing.expectTagCounts(right_name, .{ .stmt_property = 1, .type_union = 1, .type_intersection = 1 });
+
+    // 非对称可见性仍是 `(set)` 语义（不得因上面的放宽而失效）
+    var av = try ast.Ast.parse(gpa, "<?php class C { public private(set) int $p; }", testing.v84);
+    defer av.deinit(gpa);
+    try testing.expectNoErrors(av);
+    try testing.expectTagCounts(av, .{ .stmt_property = 1 });
+    const prop = testing.firstNode(av, .stmt_property) orelse return error.TestUnexpectedResult;
+    const av_extra = av.extraData(av.nodeData(prop).extra_and_opt_node[0], PropertyComponents);
+    try std.testing.expectEqual(@as(u8, 2), @as(u8, @truncate(av_extra.visibility >> 8)));
 }

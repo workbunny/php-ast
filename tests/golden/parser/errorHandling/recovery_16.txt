@@ -2,9 +2,9 @@
 ;   Syntax error, unexpected T_USE, expecting ';' or '{' from 4:1 to 4:3
 ;   Syntax error, unexpected T_USE, expecting ';' or '{' from 5:1 to 5:3
 ;   Syntax error, unexpected T_CONST, expecting ';' from 6:1 to 6:5
-;   Syntax error, unexpected T_CONTINUE from 9:1 to 9:8
-;   Syntax error, unexpected T_RETURN from 11:1 to 11:6
-;   Syntax error, unexpected T_ECHO from 13:1 to 13:4
+;   Syntax error, unexpected T_BREAK from 8:1 to 8:5
+;   Syntax error, unexpected T_CONTINUE from 10:1 to 10:8
+;   Syntax error, unexpected T_RETURN from 12:1 to 12:6
 (root `<?php`
   (stmt_namespace `namespace`
     (name `Foo`)
@@ -28,30 +28,6 @@
       (const_decl `A`
         (expr_int `1`)
       )
-    )
-    (stmt_break `break`
-      (expr_const_fetch `break`
-        (name `break`)
-      )
-    )
-    (stmt_expression `2`
-      (expr_int `2`)
-    )
-    (stmt_continue `continue`
-      (expr_const_fetch `continue`
-        (name `continue`)
-      )
-    )
-    (stmt_expression `2`
-      (expr_int `2`)
-    )
-    (stmt_return `return`
-      (expr_const_fetch `return`
-        (name `return`)
-      )
-    )
-    (stmt_expression `2`
-      (expr_int `2`)
     )
     (stmt_echo `echo`
       (expr_variable `$a`)

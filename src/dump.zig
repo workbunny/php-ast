@@ -140,12 +140,12 @@ test "dump :: 渲染 :: 特殊字符被转义为单行" {
 
     try std.testing.expectEqualStrings(
         "(root `<?php`\n" ++
-        "  (stmt_expression `\"`\n" ++
-        "    (expr_encapsed `\"`\n" ++
-        "      (expr_string_part `a\\nb`)\n" ++
-        "    )\n" ++
-        "  )\n" ++
-        ")\n",
+            "  (stmt_expression `\"`\n" ++
+            "    (expr_encapsed `\"`\n" ++
+            "      (expr_string_part `a\\nb`)\n" ++
+            "    )\n" ++
+            "  )\n" ++
+            ")\n",
         buf.written(),
     );
 }

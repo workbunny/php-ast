@@ -1,0 +1,11 @@
+# 行尾统一为 LF（属性优先于 core.autocrlf）。
+#
+# 背景：`zig fmt` 要求 LF —— CRLF 文件会被 `zig fmt --check` 判为未格式化。
+# 若行尾不钉死，Windows 侧以 core.autocrlf=true 检出会得到 CRLF 工作区，
+# 格式门禁（CI 的 fmt job 与本地 `zig fmt --check`）就会对每个文件误报。
+* text=auto eol=lf
+
+# 二进制产物：不参与文本归一化与文本 diff
+*.so  binary
+*.dll binary
+*.exe binary

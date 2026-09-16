@@ -270,9 +270,21 @@ fn isInsideBlock(tree: *const ast.Ast, pm: *const parent_map.ParentMap, node: In
     var cur = pm.parentOf(node);
     while (cur) |n| {
         switch (tree.nodeTag(n)) {
-            .stmt_block, .stmt_if, .stmt_while, .stmt_for, .stmt_foreach, .stmt_do,
-            .stmt_switch, .stmt_switch_case, .stmt_try, .stmt_catch, .stmt_function,
-            .stmt_method, .expr_closure, .expr_arrow_function, .stmt_declare,
+            .stmt_block,
+            .stmt_if,
+            .stmt_while,
+            .stmt_for,
+            .stmt_foreach,
+            .stmt_do,
+            .stmt_switch,
+            .stmt_switch_case,
+            .stmt_try,
+            .stmt_catch,
+            .stmt_function,
+            .stmt_method,
+            .expr_closure,
+            .expr_arrow_function,
+            .stmt_declare,
             => return true,
             else => {},
         }
@@ -363,7 +375,6 @@ fn isParenthesizedOperand(tree: *const ast.Ast, node: Index) bool {
 /// 层拒绝（`reserved.isForbiddenDeclName`），不会到达本层；本层只判 identifier 形态的
 /// 保留名（`self` / `parent` / `static`，见 `reserved.isReservedClassName`）。
 
-
 // ---------------------------------------------------------------------------
 // 判据二：namespace 顶层状态机
 // ---------------------------------------------------------------------------
@@ -426,8 +437,7 @@ fn checkTopLevel(self: *Checker, tree: *const ast.Ast, stmts: []const Index) !vo
                 // unbracketed：吞掉其后全部代码，正常应位于 rootStmts 末尾。
                 // 二者均定位在 `namespace` 关键字上（php-parser 用关键字 token 报）
                 const nsk = tree.nodeMainToken(s);
-                if (prefix_bracketed) self.addRange(.namespace_mixed, nsk, nsk, nsk, 0)
-                else if (prefix_code) self.addRange(.namespace_not_first, nsk, nsk, nsk, 0);
+                if (prefix_bracketed) self.addRange(.namespace_mixed, nsk, nsk, nsk, 0) else if (prefix_code) self.addRange(.namespace_not_first, nsk, nsk, nsk, 0);
             }
             continue;
         }
@@ -575,34 +585,16 @@ test "semantic :: halt :: 非最外层作用域" {
 
 test "semantic :: namespace :: 嵌套 / 混用 / 越界代码 / 非首语句" {
     const gpa = std.testing.allocator;
-    try expectSemanticErrors(gpa,
-        "<?php namespace A { namespace B { } }",
-        &.{.namespace_nested});
-    try expectSemanticErrors(gpa,
-        "<?php namespace A; echo 1; namespace B { }",
-        &.{.namespace_mixed});
-    try expectSemanticErrors(gpa,
-        "<?php namespace A {} namespace B;",
-        &.{.namespace_mixed});
-    try expectSemanticErrors(gpa,
-        "<?php echo 1; namespace A;",
-        &.{.namespace_not_first});
-    try expectSemanticErrors(gpa,
-        "<?php namespace A {} echo 1;",
-        &.{.namespace_code_outside});
-    try expectSemanticErrors(gpa,
-        "<?php namespace A; echo 1;",
-        &.{});
+    try expectSemanticErrors(gpa, "<?php namespace A { namespace B { } }", &.{.namespace_nested});
+    try expectSemanticErrors(gpa, "<?php namespace A; echo 1; namespace B { }", &.{.namespace_mixed});
+    try expectSemanticErrors(gpa, "<?php namespace A {} namespace B;", &.{.namespace_mixed});
+    try expectSemanticErrors(gpa, "<?php echo 1; namespace A;", &.{.namespace_not_first});
+    try expectSemanticErrors(gpa, "<?php namespace A {} echo 1;", &.{.namespace_code_outside});
+    try expectSemanticErrors(gpa, "<?php namespace A; echo 1;", &.{});
     // 连续 unbracketed namespace / nop 前导 / bracketed 后 halt 均合法
-    try expectSemanticErrors(gpa,
-        "<?php namespace Foo\\Bar; foo; namespace Bar; bar;",
-        &.{});
-    try expectSemanticErrors(gpa,
-        "<?php ; namespace Foo;",
-        &.{});
-    try expectSemanticErrors(gpa,
-        "<?php declare(A='B'); namespace B {} __halt_compiler();",
-        &.{});
+    try expectSemanticErrors(gpa, "<?php namespace Foo\\Bar; foo; namespace Bar; bar;", &.{});
+    try expectSemanticErrors(gpa, "<?php ; namespace Foo;", &.{});
+    try expectSemanticErrors(gpa, "<?php declare(A='B'); namespace B {} __halt_compiler();", &.{});
 }
 
 test "semantic :: 遍历冒烟 :: 一元/结构节点 forEachChild 不崩（覆盖 expr_clone 等）" {

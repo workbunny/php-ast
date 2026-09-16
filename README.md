@@ -8,6 +8,10 @@
   🐇PHP Abstract Syntax Tree (AST) library implemented in Zig. 🐇
 </p>
 
+<p align="center">
+  <a href="https://github.com/workbunny/php-ast/actions/workflows/ci.yml"><img src="https://github.com/workbunny/php-ast/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
 # php-ast
 
 ## 简介
@@ -30,6 +34,8 @@ php-ast 是一个用 Zig 实现的 PHP 源码解析库，将 PHP 源码解析为
 - [doc/example.md](doc/example.md) — 与 php-parser 的用法趋同对照示例
 - [doc/special.md](doc/special.md) — 与 php-parser 的实现差异清单（归一、错误模型等）
 - [doc/dev.md](doc/dev.md) — 开发者手册：代码库布局、测试体系（种类/触发/调试）、开发流程与核对清单
+- [doc/compat.md](doc/compat.md) — 版本兼容性承诺：0.x 阶段的 z / y 语义与破坏性变更的记录方式
+- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
 
 ## 设计
 
@@ -192,7 +198,9 @@ git diff tests/golden            # 必须复核，确认改动符合预期
 仓库其余目录：`tools/` 是与主体库源码分离、不随库编译的辅助工具——含 `conformance.zig`
 （符合性对照：以 PHP-Parser 测试用例为 oracle 度量本库的接受面与诊断质量，并做防回归
 门禁，运行 `zig build conformance -- --php-parser <路径>`，报告默认落
-`zig-out/conformance/`）；`golden_gen.zig`（快照迁移，见上）；两者共用的 `.test` 解析在
+`zig-out/conformance/`）；`golden_gen.zig`（快照迁移，见上）；`measure.zig`（内存 / 分配
+测量：逐个输入的分配次数与峰值驻留，运行 `zig build measure`，可接 `-- <file.php>...`；
+建议配 `-Doptimize=ReleaseFast`）；`conformance` 与 `golden-gen` 共用的 `.test` 解析在
 `fixtures.zig`，门禁数据在 `known_diffs.txt`。`reference/` 为本地参考（PHP-Parser 完整
 源码等，`.gitignore` 忽略，不入库）——PHP-Parser 是**开发期参照**，不是构建依赖。
 

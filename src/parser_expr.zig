@@ -6,6 +6,7 @@ const Parser = @import("parser.zig").Parser;
 const decl = @import("parser_decl.zig");
 const stmt = @import("parser_stmt.zig");
 const types = @import("parser_type.zig");
+const reserved = @import("reserved.zig");
 const testing = @import("testing.zig");
 
 const Node = ast.Node;
@@ -103,8 +104,9 @@ fn isCastKeyword(p: *const Parser) bool {
     if (tag != .identifier and !tag.isKeyword()) return false;
     const s = p.tokSlice();
     const casts = [_][]const u8{
-        "int", "integer", "float", "double", "real", "string",
-        "binary", "array", "object", "bool", "boolean", "unset", "void",
+        "int",    "integer", "float",  "double", "real",    "string",
+        "binary", "array",   "object", "bool",   "boolean", "unset",
+        "void",
     };
     // PHP cast 名大小写不敏感（`(VOID)` / `(Int)` 合法）。
     for (casts) |c| {
@@ -113,19 +115,28 @@ fn isCastKeyword(p: *const Parser) bool {
     return false;
 }
 
-/// yield value/操作数是否能起始表达式的 token 粗判：语句/定界与二元运算符起始
-/// （`; , ) ] } * / % ** = . ? : & | ^ < >`）不可作 value 起始；其余（一元/字面量/
-/// 名字/变量等）可。粗判覆盖 fixture 场景，精确性由表达式解析继续保证。
+/// `yield` / `return` 的操作数能否起始表达式（`parseYield` / `parseReturn` 用它区分
+/// 「无操作数」与「有操作数」，对应 php.y 的 `T_YIELD expr?` 由文法消歧）。
+///
+/// 判据由既有单一来源导出，不另立运算符清单：能出现在**中缀位置**的运算符
+/// （`bindingPower` 非 0）不能起始表达式，唯一例外是可作一元前缀的 `+` / `-`；
+/// 赋值运算符见 `isAssignmentOp`，三元与定界符另行列出。
 pub fn isValueStart(tag: Token.Tag) bool {
     return switch (tag) {
-        .semicolon, .eof, .comma, .rparen, .rbracket, .rbrace,
-        .asterisk, .slash, .percent, .double_asterisk,
-        .ampersand, .pipe, .caret, .dot, .dot_equal,
-        .equals, .double_arrow, .colon, .question,
-        .less_than, .greater_than, .ampersand_equal, .pipe_equal, .caret_equal,
-        .left_shift, .right_shift,
+        // 可作一元前缀，尽管在优先级表中有中缀值
+        .plus, .minus => true,
+        // 定界符 / 三元 / 键值分隔
+        .semicolon,
+        .eof,
+        .comma,
+        .rparen,
+        .rbracket,
+        .rbrace,
+        .colon,
+        .question,
+        .double_arrow,
         => false,
-        else => true,
+        else => !isAssignmentOp(tag) and bindingPower(tag)[0] == 0,
     };
 }
 
@@ -246,6 +257,16 @@ pub fn parseName(p: *Parser) ast.ParseError!?Index {
 /// `parsePrimary` 的括号分支自然消化。
 /// 不消费 `(`——`new` 的构造参数括号由 `kw_new` 分支统一解析。
 fn parseClassNameReference(p: *Parser) ast.ParseError!?Index {
+    // 拼写为关键字、但目标版本尚未生效的类名（如 8.0 目标下的 `new ReadOnly`）：与
+    // `.identifier` 同走 `parseName`。若落到 `else` 分支的 `parsePrimary`，构造参数
+    // `(...)` 会被当函数调用吃掉。
+    if (p.tokTag().isKeyword() and reserved.isNameToken(p.tokTag(), p.version)) {
+        const name = (try parseName(p)) orelse return null;
+        if (p.tokTag() == .double_colon) {
+            return (try parseNewVariableSuffix(p, name)) orelse return null;
+        }
+        return name;
+    }
     switch (p.tokTag()) {
         .identifier, .backslash, .kw_namespace, .kw_static => {
             // 名字形态：`new Foo` / `new \Foo\Bar` / `new namespace\Foo` / `new static()` /
@@ -277,6 +298,14 @@ fn parseClassNameReference(p: *Parser) ast.ParseError!?Index {
             return (try parseName(p)) orelse return null;
         },
         else => {
+            // 关键字不作类名：php.y `class_name: T_STATIC | name`，而 `name` 只接受
+            // T_STRING / 限定名——`new ReadOnly()` 非法。目标版本尚未生效的关键字
+            // 已由函数开头的前置按名字处理，此处只剩「已是关键字」者。
+            // 就地报诊断：静默返回 null 会让 `new` 分支回溯后无人报错（漏报）。
+            if (p.tokTag().isKeyword()) {
+                p.warnAtExpected(ast.Error.Tag.expected_token, p.tok_i, .name);
+                return null;
+            }
             // 括号表达式 / 函数调用结果等（`(expr)`、`foo()` 作类名）
             const base = (try parsePrimary(p)) orelse return null;
             return (try parseNewVariableSuffix(p, base)) orelse return null;
@@ -811,6 +840,11 @@ pub fn parseEncapsed(p: *Parser) ast.ParseError!?Index {
 }
 
 pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
+    // 拼写为关键字、但目标版本尚未生效的名字（如 8.0 目标下的 `ReadOnly::x`）：按名字
+    // 形态解析，与 `.identifier` 分支同路径，避免落到关键字分支或报错。
+    if (p.tokTag().isKeyword() and reserved.isNameToken(p.tokTag(), p.version)) {
+        return parseIdentifierLike(p);
+    }
     switch (p.tokTag()) {
         .int_literal => {
             const t = p.nextToken();
@@ -957,15 +991,17 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
             const extra = try p.addExtra(NewComponents{ .name = name, .args = .{ .start = args.start, .end = args.end } });
             const idx = (try p.addNode(.{
                 .tag = .expr_new,
-               
- .main_token = t,
+
+                .main_token = t,
                 .data = .{ .extra_and_node = .{ extra, name } },
             })) orelse unreachable;
-            // 无括号 `new` 的**链式后续**（`new X->method()` / `new X[0]` / `new X::$p`）
-            // 是 PHP 8.4 引入（此前须 `(new X)->method()`）；无括号 `new X;` 本身是基础
-            // 语法，不可误标 8.4（否则 5.x/7.x 目标下的普通 new 全被拒）。同 tag 多版本，
-            // 无法由 tag 区分，故在此按「无 args 且 new 表达式后紧跟链 token」覆盖。
-            if (args.start == args.end and isNewChainNext(p.tokTag())) {
+            // `new` 的**链式后续**（`new X->m()` / `new X()->m()` / `new X[0]` / `new X::$p`）
+            // 自 PHP 8.4 起可用（此前须 `(new X)->m()`）。判据是这个**语法事实**：8.3 及以前
+            // 该形态本身即语法错，一旦解析出链 token 必为 8.4。
+            // 不用 `args` 是否为空来推断「无括号」——`new X()` 与 `new X->m()` 的 args 区间
+            // 同样为空，那是同 tag 承载两版本语义的歧义来源，且会漏标带构造参数的链式
+            // （`new X(1)->m()`）。
+            if (isNewChainNext(p.tokTag())) {
                 p.node_versions.items[@intFromEnum(idx)] = PhpVersion.fromComponents(8, 4);
             }
             return idx;
@@ -1135,9 +1171,22 @@ pub fn parsePrimary(p: *Parser) ast.ParseError!?Index {
                 _ = p.nextToken();
                 return null;
             }
-            // 半保留字作名字起始（php.y `identifier → semi_reserved`）：`private\protected()
-            // `fn\use()` 等关键字链调用/常量引用。能到 parsePrimary 的语境均合法。
-            if (p.tokTag().isKeyword()) return parseIdentifierLike(p);
+            // 关键字作**名字起始**只在两种形态成立：后随 `\` 构成限定名
+            // （`fn\use()` / `private\protected()`——php.y 由词法切成单个 T_NAME_QUALIFIED，
+            // 本库段分开切，故在此放行整条链），或 `readonly` 后随 `(`（php.y
+            // `name_readonly argument_list`）。其余关键字不是合法名字起始：
+            // `ReadOnly::FOO`（class_name 只接受 T_STRING）、`list[...]` 等。
+            if (p.tokTag().isKeyword()) {
+                const next = tokenTagAt(p, p.tok_i + 1);
+                if (next == .backslash or
+                    (p.tokTag() == .kw_readonly and next == .lparen) or
+                    // 命名参数名（`bar(class: 1)`、php.y `name` 含 semi_reserved）：
+                    // 名字后随 `:`，与 `ReadOnly::FOO`（`::`）等非法形态可区分。
+                    next == .colon)
+                {
+                    return parseIdentifierLike(p);
+                }
+            }
             p.warn(ast.Error.Tag.expected_expr);
             return null;
         },
@@ -1554,9 +1603,7 @@ fn parseClosure(p: *Parser, attrs: SubRange) ast.ParseError!?Index {
 
 fn isAssignmentOp(t: Token.Tag) bool {
     return switch (t) {
-        .equals, .plus_equal, .minus_equal, .asterisk_equal, .slash_equal, .percent_equal,
-        .dot_equal, .ampersand_equal, .pipe_equal, .caret_equal, .double_asterisk_equal,
-        .left_shift_equal, .right_shift_equal, .null_coalesce_equal => true,
+        .equals, .plus_equal, .minus_equal, .asterisk_equal, .slash_equal, .percent_equal, .dot_equal, .ampersand_equal, .pipe_equal, .caret_equal, .double_asterisk_equal, .left_shift_equal, .right_shift_equal, .null_coalesce_equal => true,
         else => false,
     };
 }
@@ -1684,6 +1731,36 @@ test "expr :: 关键字名字 :: 名字链/调用/命名空间（对齐 keywords
         .name_relative = 1, // namespace\fn\use
         .expr_func_call = 5,
     });
+}
+
+test "expr :: 关键字不作名字起始 :: class_name 位与表达式起始" {
+    const gpa = std.testing.allocator;
+
+    // 8.4 下 readonly 已是关键字：class_name 只接受 T_STRING → 这两例非法
+    const bad = [_][:0]const u8{
+        "<?php $x = ReadOnly::FOO;",
+        "<?php $x = new ReadOnly();",
+    };
+    for (bad) |src| {
+        var tree = try ast.Ast.parse(gpa, src, testing.v84);
+        defer tree.deinit(gpa);
+        try std.testing.expect(tree.errors.len > 0);
+    }
+
+    // 8.0 目标下 readonly 尚未成为关键字，同形态合法（版本门控）
+    var v80 = try ast.Ast.parse(gpa, "<?php $x = new ReadOnly();", testing.v80);
+    defer v80.deinit(gpa);
+    try testing.expectNoErrors(v80);
+
+    // 关键字仍可作限定名的段（后随 `\`）
+    var chain = try ast.Ast.parse(gpa, "<?php fn\\use();", testing.v84);
+    defer chain.deinit(gpa);
+    try testing.expectNoErrors(chain);
+
+    // 命名参数名（后随 `:`）允许关键字
+    var named = try ast.Ast.parse(gpa, "<?php bar(class: 1);", testing.v84);
+    defer named.deinit(gpa);
+    try testing.expectNoErrors(named);
 }
 
 test "expr :: 类常量 :: 关键字名与多常量（对齐 semiReserved.test）" {

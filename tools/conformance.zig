@@ -366,7 +366,6 @@ fn scanOne(gpa: std.mem.Allocator, rel: []const u8, flat: []const u8, rep: *Repo
     // 孤立代码段（期望缺失）由 `fixtures.parse` 统计
 }
 
-
 /// 去掉 php-parser 消息的位置后缀 ` from L:C to L:C`。
 fn stripPos(s: []const u8) []const u8 {
     if (std.mem.lastIndexOf(u8, s, " from ")) |k| {
@@ -547,8 +546,7 @@ fn runChecks(
             "基准:   {s}（.test {d} 个，配对代码段 {d}：期望接受 {d} / 期望报错 {d}）\n" ++
             "口径:   「接受」= parse 与 semantic.check 均无诊断\n" ++
             "期望接受: 通过 {d}，误拒 {d}\n期望报错: 已报 {d}，漏报 {d}\n",
-        .{ parser_dir, rels.len, rep.segments, rep.accept_expected, rep.error_expected,
-            rep.accept_clean, rep.false_reject, rep.both_reported, rep.missed_error },
+        .{ parser_dir, rels.len, rep.segments, rep.accept_expected, rep.error_expected, rep.accept_clean, rep.false_reject, rep.both_reported, rep.missed_error },
     );
     if (rep.unpaired > 0) try w.print("孤立代码段（无期望，格式异常）: {d}\n", .{rep.unpaired});
 
@@ -593,8 +591,7 @@ fn writeDiagnosticReport(
             "样本:   期望报错且本库也报的段 {d}\n" ++
             "比对:   文本+位置全等 {d} | 条数不同 {d} | 正文不同 {d} | 位置不同 {d}\n" ++
             "一致率: {d}%\n",
-        .{ parser_dir, s.total, s.full_match, s.count_diff, s.raw_diff, s.pos_diff,
-            if (s.total == 0) 0 else s.full_match * 100 / s.total },
+        .{ parser_dir, s.total, s.full_match, s.count_diff, s.raw_diff, s.pos_diff, if (s.total == 0) 0 else s.full_match * 100 / s.total },
     );
 
     for ([_][]const u8{ "条数", "文本", "位置" }) |dim| {

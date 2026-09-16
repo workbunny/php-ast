@@ -217,5 +217,4 @@ const kind = attrs.get(node, "kind");                            // ?[]const u8
 - 结果一致：两侧操作落在同一语义结果上；
 - 复杂度同级：php-ast 版本不应显著更长/更绕，否则视为 API 缺陷；
 - 上述示例覆盖：类型名字符串、位置、doc comment、attributes（compat 层，实现于
-  `src/compat.zig`）；树变换与源码打印不在本库职责内（见 `doc/special.md` P8），故无
-  对应示例。
+  `src/compat.zig`）；树变换与源码打印不在本库职责内，故无对应示例。

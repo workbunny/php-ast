@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("tools/conformance.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{ .{ .name = "ast", .module = lib_mod } },
+            .imports = &.{.{ .name = "ast", .module = lib_mod }},
         }),
     });
     const run_conformance = b.addRunArtifact(conformance_exe);
@@ -80,4 +80,23 @@ pub fn build(b: *std.Build) void {
     }
     const golden_gen_step = b.step("golden-gen", "从 PHP-Parser 测试用例迁移快照源码到 tests/golden/parser");
     golden_gen_step.dependOn(&run_golden_gen.step);
+
+    // 内存 / 分配测量工具（tools/measure.zig）：把解析包在统计型 allocator 里，报告
+    // 分配次数与峰值驻留。不判对错、不需参照，用于观察内存开销与留基线。
+    // 默认扫 `tests/golden/**`；也可 `-- <file.php>...` 指定。
+    const measure_exe = b.addExecutable(.{
+        .name = "measure",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/measure.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "ast", .module = lib_mod }},
+        }),
+    });
+    const run_measure = b.addRunArtifact(measure_exe);
+    if (b.args) |args| {
+        for (args) |a| run_measure.addArg(a);
+    }
+    const measure_step = b.step("measure", "内存 / 分配测量：解析的分配次数与峰值驻留");
+    measure_step.dependOn(&run_measure.step);
 }

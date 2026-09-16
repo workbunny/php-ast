@@ -1,0 +1,30 @@
+# 安装 Zig：官方发行包 + sha256 校验。CI 各 job 复用这一处定义。
+#
+# 不用现成的 setup-zig action：包来源与校验值都在仓库内可见，且与本地工具链
+# 严格同版本（0.16.0）。校验失败立即红，不会静默换用别的版本。
+name: setup-zig
+description: 安装 Zig 0.16.0（官方发行包 + sha256 校验）
+
+runs:
+  using: composite
+  steps:
+    - name: 下载并校验 Zig 0.16.0
+      shell: bash
+      run: |
+        set -eu
+        VERSION=0.16.0
+        TARBALL=zig-x86_64-linux-0.16.0.tar.xz
+        SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+        curl -fsSL -o "/tmp/$TARBALL" "https://ziglang.org/download/$VERSION/$TARBALL"
+        echo "$SHA256  /tmp/$TARBALL" | sha256sum -c -
+        mkdir -p /opt/zig
+        tar -xJf "/tmp/$TARBALL" -C /opt/zig --strip-components=1
+        echo "/opt/zig" >> "$GITHUB_PATH"
+
+    - name: 确认工具链版本
+      shell: bash
+      run: |
+        set -eu
+        ver=$(zig version)
+        echo "zig version: $ver"
+        [ "$ver" = "0.16.0" ] || { echo "::error::Zig 版本不符: $ver"; exit 1; }

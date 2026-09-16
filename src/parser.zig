@@ -334,16 +334,61 @@ pub const Parser = struct {
     fn isStmtStartTag(tag: Token.Tag) bool {
         return switch (tag) {
             .variable, .hash, .dollar, .identifier => true,
-            .kw_function, .kw_class, .kw_if, .kw_while, .kw_for, .kw_foreach,
-            .kw_return, .kw_echo, .kw_use, .kw_namespace, .kw_const, .kw_switch,
-            .kw_try, .kw_throw, .kw_do, .kw_break, .kw_continue, .kw_global,
-            .kw_unset, .kw_list, .kw_new, .kw_clone, .kw_match, .kw_goto,
-            .kw_declare, .kw_interface, .kw_trait, .kw_enum, .kw_abstract,
-            .kw_final, .kw_readonly, .kw_print, .kw_case, .kw_default, .kw_elseif,
-            .kw_else, .kw_catch, .kw_finally, .kw_endif, .kw_endwhile, .kw_endfor,
-            .kw_endforeach, .kw_endswitch, .kw_fn, .kw_require, .kw_require_once,
-            .kw_include, .kw_include_once, .kw_exit, .kw_eval, .kw_isset,
-            .kw_empty, .kw_yield, .kw_array, => true,
+            .kw_function,
+            .kw_class,
+            .kw_if,
+            .kw_while,
+            .kw_for,
+            .kw_foreach,
+            .kw_return,
+            .kw_echo,
+            .kw_use,
+            .kw_namespace,
+            .kw_const,
+            .kw_switch,
+            .kw_try,
+            .kw_throw,
+            .kw_do,
+            .kw_break,
+            .kw_continue,
+            .kw_global,
+            .kw_unset,
+            .kw_list,
+            .kw_new,
+            .kw_clone,
+            .kw_match,
+            .kw_goto,
+            .kw_declare,
+            .kw_interface,
+            .kw_trait,
+            .kw_enum,
+            .kw_abstract,
+            .kw_final,
+            .kw_readonly,
+            .kw_print,
+            .kw_case,
+            .kw_default,
+            .kw_elseif,
+            .kw_else,
+            .kw_catch,
+            .kw_finally,
+            .kw_endif,
+            .kw_endwhile,
+            .kw_endfor,
+            .kw_endforeach,
+            .kw_endswitch,
+            .kw_fn,
+            .kw_require,
+            .kw_require_once,
+            .kw_include,
+            .kw_include_once,
+            .kw_exit,
+            .kw_eval,
+            .kw_isset,
+            .kw_empty,
+            .kw_yield,
+            .kw_array,
+            => true,
             else => false,
         };
     }
@@ -358,7 +403,6 @@ pub const Parser = struct {
         if (p.tokTag() != .eof) _ = p.nextToken();
         p.skipToStmtSync(false);
     }
-
 
     pub fn parseRoot(p: *Parser) ast.ParseError!Index {
         while (p.tokTag() == .open_tag) _ = p.nextToken();
@@ -396,7 +440,7 @@ test "parser :: 错误恢复 :: 缺表达式产出 stmt_error 而非中断" {
     var tree = try ast.Ast.parse(gpa, "<?php $a = ;", testing.v84);
     defer tree.deinit(gpa);
     // 解析不致命：错误以诊断形式收集，并保留错误节点
-    try std.testing.expect(testing.countTag(tree,.stmt_error) >= 1);
+    try std.testing.expect(testing.countTag(tree, .stmt_error) >= 1);
 }
 
 test "parser :: 错误恢复 :: 出错后继续解析后续语句" {
@@ -405,7 +449,7 @@ test "parser :: 错误恢复 :: 出错后继续解析后续语句" {
     defer tree.deinit(gpa);
     try std.testing.expect(tree.errors.len >= 1);
     // 出错点之后的合法语句仍应被解析出来
-    try std.testing.expectEqual(@as(usize, 1), testing.countTag(tree,.expr_int));
+    try std.testing.expectEqual(@as(usize, 1), testing.countTag(tree, .expr_int));
 }
 
 test "parser :: 多错误 :: 一次收集全部诊断而非遇错即停" {

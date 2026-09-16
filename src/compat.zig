@@ -276,8 +276,7 @@ test "compat :: phpParserType :: 核心 tag 映射" {
 
 test "compat :: 位置 API :: 与 token 区间一致" {
     const gpa = std.testing.allocator;
-    var tree = try ast.Ast.parse(gpa,
-        "<?php\nfunction f() {\n    return 1;\n}\n", testing.v84);
+    var tree = try ast.Ast.parse(gpa, "<?php\nfunction f() {\n    return 1;\n}\n", testing.v84);
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
@@ -293,8 +292,7 @@ test "compat :: 位置 API :: 与 token 区间一致" {
 
 test "compat :: getDocComment :: 取回 docblock 文本" {
     const gpa = std.testing.allocator;
-    var tree = try ast.Ast.parse(gpa,
-        "<?php\n/**\n * 描述\n */\nfunction f() {}\n", testing.v84);
+    var tree = try ast.Ast.parse(gpa, "<?php\n/**\n * 描述\n */\nfunction f() {}\n", testing.v84);
     defer tree.deinit(gpa);
     try testing.expectNoErrors(tree);
 
